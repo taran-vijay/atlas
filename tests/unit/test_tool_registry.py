@@ -1,4 +1,4 @@
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 
@@ -7,14 +7,15 @@ from atlas.core.tools.registry import PermissionDeniedError, ToolNotFoundError, 
 
 
 class _EchoTool(Tool):
-    name = "echo"
-    description = "Echoes back the given text."
-    parameters: ClassVar[dict[str, Any]] = {
-        "type": "object",
-        "properties": {"text": {"type": "string"}},
-        "required": ["text"],
-    }
-    permission = PermissionLevel.READ_ONLY
+    def __init__(self) -> None:
+        self.name = "echo"
+        self.description = "Echoes back the given text."
+        self.parameters: dict[str, Any] = {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        }
+        self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
         if "text" not in arguments:
@@ -25,8 +26,10 @@ class _EchoTool(Tool):
 
 
 class _DeleteTool(_EchoTool):
-    name = "delete_everything"
-    permission = PermissionLevel.PRIVILEGED
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "delete_everything"
+        self.permission = PermissionLevel.PRIVILEGED
 
 
 async def test_read_only_tool_runs_without_confirmation() -> None:
