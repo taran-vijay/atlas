@@ -1,6 +1,7 @@
 """Safe, read-only tools for interacting with the local system."""
 from __future__ import annotations
 
+import asyncio
 import platform
 import re
 import socket
@@ -10,6 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
+
+
+def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run a local telemetry command synchronously; async tools call this via to_thread."""
+    return subprocess.run(command, capture_output=True, text=True, check=False, timeout=5)
 
 
 class GetTimeTool(Tool):
@@ -123,13 +129,7 @@ class GetBatteryTool(Tool):
         if platform.system() != "Darwin":
             return ToolResult(success=False, content="", error="Battery telemetry is not implemented for this OS yet.")
 
-        completed = subprocess.run(
-            ["pmset", "-g", "batt"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
+        completed = await asyncio.to_thread(_run_command, ["pmset", "-g", "batt"])
         if completed.returncode != 0:
             return ToolResult(success=False, content="", error="macOS battery telemetry failed.")
 
@@ -174,7 +174,7 @@ class GetProcessesTool(Tool):
             return ToolResult(success=False, content="", error="Invalid process limit.")
 
         command = ["ps", "-axo", "pid=,pcpu=,pmem=,comm="] if platform.system() != "Windows" else ["tasklist"]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=5)
+        completed = await asyncio.to_thread(_run_command, command)
         if completed.returncode != 0:
             return ToolResult(success=False, content="", error="Process listing failed.")
 
