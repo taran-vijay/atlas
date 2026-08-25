@@ -1,25 +1,26 @@
-"""Integration test: a scripted multi-turn conversation through the full
-core loop, with a stub LLM standing in for Ollama so this runs in CI
-without any local model or network access.
-"""
+"""Integration tests for the full conversation loop without network access."""
+from typing import Any
+
 from atlas.core.assistant.core import AssistantCore
-from atlas.core.llm.base import LLMProvider, LLMResponse
+from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ToolRegistry
 
 
 class _ScriptedLLM(LLMProvider):
-    def __init__(self, replies: list[str]):
+    def __init__(self, replies: list[str]) -> None:
         self._replies = iter(replies)
 
-    async def generate(self, messages, *, tools=None):
+    async def generate(
+        self, messages: list[ChatMessage], *, tools: list[dict[str, Any]] | None = None
+    ) -> LLMResponse:
         return LLMResponse(content=next(self._replies))
 
-    async def is_available(self):
+    async def is_available(self) -> bool:
         return True
 
 
-async def test_multi_turn_conversation(tmp_path):
+async def test_multi_turn_conversation(tmp_path: Any) -> None:
     memory = SQLiteMemoryStore(tmp_path / "memory.db")
     core = AssistantCore(
         assistant_name="Atlas",
@@ -39,7 +40,7 @@ async def test_multi_turn_conversation(tmp_path):
     assert [t.role for t in history] == ["user", "assistant", "user", "assistant"]
 
 
-async def test_forget_clears_memory(tmp_path):
+async def test_forget_clears_memory(tmp_path: Any) -> None:
     memory = SQLiteMemoryStore(tmp_path / "memory.db")
     await memory.add_turn("user", "secret")
     await memory.clear()
