@@ -1,9 +1,4 @@
-"""Text-in / text-out entry point for Atlas (Milestone 1).
-
-Voice is not wired up yet -- this is the thin vertical slice that proves
-config -> LLMProvider -> AssistantCore -> logging works end to end before
-anything voice- or tool-related is layered on top.
-"""
+"""Text-in / text-out entry point for Atlas (Milestone 1)."""
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +10,7 @@ from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ToolRegistry
+from atlas.core.tools.system_tools import GetSystemInfoTool, GetTimeTool, ListDirectoryTool
 
 
 def _configure_logging(config: AtlasConfig) -> None:
@@ -27,6 +23,14 @@ def _configure_logging(config: AtlasConfig) -> None:
             logging.StreamHandler(sys.stderr),
         ],
     )
+
+
+def _build_tool_registry() -> ToolRegistry:
+    tools = ToolRegistry()
+    tools.register(GetTimeTool())
+    tools.register(GetSystemInfoTool())
+    tools.register(ListDirectoryTool())
+    return tools
 
 
 async def _run(config: AtlasConfig) -> None:
@@ -48,7 +52,7 @@ async def _run(config: AtlasConfig) -> None:
         raise SystemExit(1)
 
     memory = SQLiteMemoryStore(config.memory_db_path)
-    tools = ToolRegistry()  # empty in V1 -- framework only, see docs/roadmap.md
+    tools = _build_tool_registry()
     assistant = AssistantCore(
         assistant_name=config.assistant_name,
         llm=llm,
