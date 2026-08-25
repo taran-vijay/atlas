@@ -40,6 +40,14 @@ async def test_read_only_tool_runs_without_confirmation() -> None:
     assert result.content == "hi"
 
 
+async def test_invalid_arguments_return_tool_error_without_raising() -> None:
+    registry = ToolRegistry()
+    registry.register(_EchoTool())
+    result = await registry.dispatch("echo", {})
+    assert result.success is False
+    assert result.error == "Invalid arguments for 'echo': 'text' is required"
+
+
 async def test_unknown_tool_raises() -> None:
     registry = ToolRegistry()
     with pytest.raises(ToolNotFoundError):
