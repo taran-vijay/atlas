@@ -4,20 +4,17 @@ from __future__ import annotations
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
 
 
 class GetTimeTool(Tool):
-    name = "system.get_time"
-    description = "Return the current local date and time of the machine running Atlas."
-    parameters: ClassVar[dict[str, Any]] = {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": False,
-    }
-    permission = PermissionLevel.READ_ONLY
+    def __init__(self) -> None:
+        self.name = "system.get_time"
+        self.description = "Return the current local date and time of the machine running Atlas."
+        self.parameters = {"type": "object", "properties": {}, "additionalProperties": False}
+        self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
         if arguments:
@@ -34,14 +31,11 @@ class GetTimeTool(Tool):
 
 
 class GetSystemInfoTool(Tool):
-    name = "system.get_system_info"
-    description = "Return basic operating system and hardware information for the machine running Atlas."
-    parameters: ClassVar[dict[str, Any]] = {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": False,
-    }
-    permission = PermissionLevel.READ_ONLY
+    def __init__(self) -> None:
+        self.name = "system.get_system_info"
+        self.description = "Return basic operating system and hardware information for the machine running Atlas."
+        self.parameters = {"type": "object", "properties": {}, "additionalProperties": False}
+        self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
         if arguments:
@@ -64,20 +58,21 @@ class GetSystemInfoTool(Tool):
 
 
 class ListDirectoryTool(Tool):
-    name = "filesystem.list_directory"
-    description = "List the immediate contents of a local directory. This is read-only and does not modify files."
-    parameters: ClassVar[dict[str, Any]] = {
-        "type": "object",
-        "properties": {
-            "path": {
-                "type": "string",
-                "description": "Absolute or user-home-relative directory path to list.",
-            }
-        },
-        "required": ["path"],
-        "additionalProperties": False,
-    }
-    permission = PermissionLevel.READ_ONLY
+    def __init__(self) -> None:
+        self.name = "filesystem.list_directory"
+        self.description = "List the immediate contents of a local directory. This is read-only and does not modify files."
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or user-home-relative directory path to list.",
+                }
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
         path = arguments.get("path")
