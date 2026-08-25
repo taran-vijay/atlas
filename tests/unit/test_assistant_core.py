@@ -1,35 +1,37 @@
 from atlas.core.assistant.core import AssistantCore
-from atlas.core.llm.base import LLMProvider, LLMResponse
+from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.base import MemoryStore, MemoryTurn
 from atlas.core.tools.registry import ToolRegistry
 
 
 class _StubLLM(LLMProvider):
-    def __init__(self, reply: str):
+    def __init__(self, reply: str) -> None:
         self._reply = reply
 
-    async def generate(self, messages, *, tools=None):
+    async def generate(
+        self, messages: list[ChatMessage], *, tools: list[dict[str, object]] | None = None
+    ) -> LLMResponse:
         return LLMResponse(content=self._reply)
 
-    async def is_available(self):
+    async def is_available(self) -> bool:
         return True
 
 
 class _InMemoryStore(MemoryStore):
-    def __init__(self):
+    def __init__(self) -> None:
         self._turns: list[MemoryTurn] = []
 
-    async def add_turn(self, role, content):
+    async def add_turn(self, role: str, content: str) -> None:
         self._turns.append(MemoryTurn(role=role, content=content, timestamp=0.0))
 
-    async def recent_turns(self, limit):
+    async def recent_turns(self, limit: int) -> list[MemoryTurn]:
         return self._turns[-limit:]
 
-    async def clear(self):
+    async def clear(self) -> None:
         self._turns.clear()
 
 
-async def test_handle_message_returns_llm_reply_and_persists_turns():
+async def test_handle_message_returns_llm_reply_and_persists_turns() -> None:
     memory = _InMemoryStore()
     core = AssistantCore(
         assistant_name="Atlas",
