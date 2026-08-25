@@ -26,11 +26,7 @@ class GetTimeTool(Tool):
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         now = datetime.now().astimezone()
-        return ToolResult(
-            success=True,
-            content=now.strftime("%A, %B %d, %Y at %I:%M:%S %p %Z"),
-            data={"iso": now.isoformat(), "timezone": str(now.tzinfo)},
-        )
+        return ToolResult(success=True, content=now.strftime("%A, %B %d, %Y at %I:%M:%S %p %Z"), data={"iso": now.isoformat(), "timezone": str(now.tzinfo)})
 
 
 class GetSystemInfoTool(Tool):
@@ -45,18 +41,8 @@ class GetSystemInfoTool(Tool):
             raise ValueError("system.get_system_info does not accept arguments")
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
-        info = {
-            "operating_system": platform.system(),
-            "os_version": platform.version(),
-            "machine": platform.machine(),
-            "processor": platform.processor() or "unknown",
-            "python_version": platform.python_version(),
-        }
-        content = (
-            f"OS: {info['operating_system']} {info['os_version']}; "
-            f"architecture: {info['machine']}; processor: {info['processor']}; "
-            f"Python: {info['python_version']}"
-        )
+        info = {"operating_system": platform.system(), "os_version": platform.version(), "machine": platform.machine(), "processor": platform.processor() or "unknown", "python_version": platform.python_version()}
+        content = f"OS: {info['operating_system']} {info['os_version']}; architecture: {info['machine']}; processor: {info['processor']}; Python: {info['python_version']}"
         return ToolResult(success=True, content=content, data=info)
 
 
@@ -64,12 +50,7 @@ class ListDirectoryTool(Tool):
     def __init__(self) -> None:
         self.name = "filesystem.list_directory"
         self.description = "List the immediate contents of a local directory. This is read-only and does not modify files."
-        self.parameters = {
-            "type": "object",
-            "properties": {"path": {"type": "string", "description": "Absolute or user-home-relative directory path to list."}},
-            "required": ["path"],
-            "additionalProperties": False,
-        }
+        self.parameters = {"type": "object", "properties": {"path": {"type": "string", "description": "Absolute or user-home-relative directory path to list."}}, "required": ["path"], "additionalProperties": False}
         self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
@@ -104,14 +85,7 @@ class GetBatteryTool(Tool):
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         if platform.system() != "Darwin":
             return ToolResult(success=False, content="", error="Battery telemetry is not implemented for this OS yet.")
-        completed = await asyncio.to_thread(
-            subprocess.run,
-            ["pmset", "-g", "batt"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
+        completed = await asyncio.to_thread(subprocess.run, ["pmset", "-g", "batt"], capture_output=True, text=True, check=False, timeout=5)
         if completed.returncode != 0:
             return ToolResult(success=False, content="", error="Battery telemetry command failed.")
         match = re.search(r"(\d+)%", completed.stdout)
@@ -128,18 +102,7 @@ class GetProcessesTool(Tool):
     def __init__(self) -> None:
         self.name = "system.get_processes"
         self.description = "Return a read-only snapshot of currently running processes and resource usage."
-        self.parameters = {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of processes to return, from 1 to 50.",
-                    "minimum": 1,
-                    "maximum": 50,
-                }
-            },
-            "additionalProperties": False,
-        }
+        self.parameters = {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}}, "additionalProperties": False}
         self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
@@ -150,17 +113,11 @@ class GetProcessesTool(Tool):
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         limit = arguments.get("limit", 10)
         if not isinstance(limit, int) or isinstance(limit, bool):
-            raise ValueError("'limit' must be an integer")
-
+            raise TypeError("'limit' must be an integer")
+        if not 1 <= limit <= 50:
+            raise ValueError("'limit' must be an integer between 1 and 50")
         command = ["ps", "-axo", "pid=,pcpu=,pmem=,comm="] if platform.system() != "Windows" else ["tasklist"]
-        completed = await asyncio.to_thread(
-            subprocess.run,
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
+        completed = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, check=False, timeout=5)
         if completed.returncode != 0:
             return ToolResult(success=False, content="", error="Process listing failed.")
         processes: list[dict[str, Any]] = []
@@ -173,14 +130,7 @@ class GetProcessesTool(Tool):
                     continue
         processes.sort(key=lambda item: float(item["cpu_percent"]), reverse=True)
         processes = processes[:limit]
-        if processes:
-            lines = [
-                f"PID {p['pid']}: {p['cpu_percent']:.1f}% CPU, {p['memory_percent']:.1f}% memory, {p['command']}"
-                for p in processes
-            ]
-            content = "Top processes by CPU:\n" + "\n".join(lines)
-        else:
-            content = "No processes were reported."
+        content = "Top processes by CPU:\n" + "\n".join(f"PID {p['pid']}: {p['cpu_percent']:.1f}% CPU, {p['memory_percent']:.1f}% memory, {p['command']}" for p in processes) if processes else "No processes were reported."
         return ToolResult(success=True, content=content, data={"processes": processes})
 
 
