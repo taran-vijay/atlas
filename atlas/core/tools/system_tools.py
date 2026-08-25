@@ -128,14 +128,30 @@ class GetProcessesTool(Tool):
     def __init__(self) -> None:
         self.name = "system.get_processes"
         self.description = "Return a read-only snapshot of currently running processes and resource usage."
-        self.parameters = {"type": "object", "properties": {}, "additionalProperties": False}
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of processes to return, from 1 to 50.",
+                    "minimum": 1,
+                    "maximum": 50,
+                }
+            },
+            "additionalProperties": False,
+        }
         self.permission = PermissionLevel.READ_ONLY
 
     def validate_arguments(self, arguments: dict[str, Any]) -> None:
-        if arguments:
-            raise ValueError("system.get_processes does not accept arguments")
+        limit = arguments.get("limit", 10)
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
+            raise ValueError("'limit' must be an integer between 1 and 50")
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        limit = arguments.get("limit", 10)
+        if not isinstance(limit, int) or isinstance(limit, bool):
+            raise ValueError("'limit' must be an integer")
+
         command = ["ps", "-axo", "pid=,pcpu=,pmem=,comm="] if platform.system() != "Windows" else ["tasklist"]
         completed = await asyncio.to_thread(
             subprocess.run,
@@ -156,10 +172,15 @@ class GetProcessesTool(Tool):
                 except ValueError:
                     continue
         processes.sort(key=lambda item: float(item["cpu_percent"]), reverse=True)
-        top = processes[:10]
-        content = "Top processes by CPU:\n" + "\n".join(
-            f"PID {p['pid']}: {p['cpu_percent']:.1f}% CPU, {p['memory_percent']:.1f}% memory, {p['command']}" for p in top
-        ) or "No processes were reported."
+        processes = processes[:limit]
+        if processes:
+            lines = [
+                f"PID {p['pid']}: {p['cpu_percent']:.1f}% CPU, {p['memory_percent']:.1f}% memory, {p['command']}"
+                for p in processes
+            ]
+            content = "Top processes by CPU:\n" + "\n".join(lines)
+        else:
+            content = "No processes were reported."
         return ToolResult(success=True, content=content, data={"processes": processes})
 
 
