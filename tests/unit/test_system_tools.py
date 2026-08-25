@@ -6,7 +6,7 @@ from atlas.core.tools.system_tools import GetSystemInfoTool, GetTimeTool, ListDi
 
 
 @pytest.mark.asyncio
-async def test_get_time_returns_local_time_data():
+async def test_get_time_returns_local_time_data() -> None:
     result = await GetTimeTool().execute({})
 
     assert result.success
@@ -17,13 +17,13 @@ async def test_get_time_returns_local_time_data():
 
 
 @pytest.mark.asyncio
-async def test_get_time_rejects_arguments():
+async def test_get_time_rejects_arguments() -> None:
     with pytest.raises(ValueError):
         GetTimeTool().validate_arguments({"unexpected": True})
 
 
 @pytest.mark.asyncio
-async def test_get_system_info_returns_expected_fields():
+async def test_get_system_info_returns_expected_fields() -> None:
     result = await GetSystemInfoTool().execute({})
 
     assert result.success
@@ -32,7 +32,7 @@ async def test_get_system_info_returns_expected_fields():
 
 
 @pytest.mark.asyncio
-async def test_list_directory_returns_entries(tmp_path: Path):
+async def test_list_directory_returns_entries(tmp_path: Path) -> None:
     (tmp_path / "file.txt").write_text("hello", encoding="utf-8")
     (tmp_path / "folder").mkdir()
 
@@ -44,13 +44,13 @@ async def test_list_directory_returns_entries(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_list_directory_rejects_missing_path():
+async def test_list_directory_rejects_missing_path() -> None:
     result = await ListDirectoryTool().execute({"path": "/definitely/not/a/real/path"})
 
     assert result.success is False
     assert "does not exist" in (result.error or "")
 
 
-def test_list_directory_requires_path():
+def test_list_directory_requires_path() -> None:
     with pytest.raises(ValueError):
         ListDirectoryTool().validate_arguments({})
