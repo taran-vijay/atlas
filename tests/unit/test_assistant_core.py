@@ -1,3 +1,5 @@
+from typing import Any
+
 from atlas.core.assistant.core import AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.base import MemoryStore, MemoryTurn
@@ -9,7 +11,7 @@ class _StubLLM(LLMProvider):
         self._reply = reply
 
     async def generate(
-        self, messages: list[ChatMessage], *, tools: list[dict[str, object]] | None = None
+        self, messages: list[ChatMessage], *, tools: list[dict[str, Any]] | None = None
     ) -> LLMResponse:
         return LLMResponse(content=self._reply)
 
