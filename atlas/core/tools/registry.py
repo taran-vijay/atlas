@@ -43,7 +43,15 @@ class ToolRegistry:
 
     async def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         tool = self.get(name)
-        tool.validate_arguments(arguments)
+
+        try:
+            tool.validate_arguments(arguments)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"Invalid arguments for '{tool.name}': {exc}",
+            )
 
         if tool.permission in (PermissionLevel.CONFIRM, PermissionLevel.PRIVILEGED):
             if self._confirm is None:
