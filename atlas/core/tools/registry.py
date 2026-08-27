@@ -6,6 +6,7 @@ Tool.execute() directly -- everything routes through ToolRegistry.dispatch().
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -51,6 +52,8 @@ class ToolRegistry:
                 error=f"Unknown tool: '{name}'.",
             )
 
+        arguments = self._normalize_arguments(tool, arguments)
+
         try:
             tool.validate_arguments(arguments)
         except (TypeError, ValueError) as exc:
@@ -81,3 +84,25 @@ class ToolRegistry:
                 content="",
                 error=f"'{tool.name}' could not complete safely.",
             )
+
+    @staticmethod
+    def _normalize_arguments(tool: Tool, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Canonicalize safe integer strings emitted by local tool-calling models.
+
+        Coercion is limited to properties that the tool's own JSON schema declares
+        as integers; every other validation rule still runs unchanged.
+        """
+        normalized = arguments.copy()
+        properties = tool.parameters.get("properties", {})
+        if not isinstance(properties, dict):
+            return normalized
+        for key, schema in properties.items():
+            value = normalized.get(key)
+            if (
+                isinstance(schema, dict)
+                and schema.get("type") == "integer"
+                and isinstance(value, str)
+                and re.fullmatch(r"[+-]?\d+", value.strip())
+            ):
+                normalized[key] = int(value)
+        return normalized

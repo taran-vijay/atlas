@@ -30,6 +30,24 @@ class _DeleteTool(_EchoTool):
         self.permission = PermissionLevel.PRIVILEGED
 
 
+class _IntegerTool(Tool):
+    def __init__(self) -> None:
+        self.name = "integer"
+        self.description = "Accepts a numeric limit."
+        self.parameters: dict[str, Any] = {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+        }
+        self.permission = PermissionLevel.READ_ONLY
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        if not isinstance(arguments.get("limit"), int):
+            raise TypeError("'limit' must be an integer")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        return ToolResult(success=True, content=str(arguments["limit"]))
+
+
 async def test_read_only_tool_runs_without_confirmation() -> None:
     registry = ToolRegistry()
     registry.register(_EchoTool())
@@ -44,6 +62,22 @@ async def test_invalid_arguments_return_tool_error_without_raising() -> None:
     result = await registry.dispatch("echo", {})
     assert result.success is False
     assert result.error == "Invalid arguments for 'echo': 'text' is required"
+
+
+async def test_schema_integer_string_is_normalized_before_validation() -> None:
+    registry = ToolRegistry()
+    registry.register(_IntegerTool())
+    result = await registry.dispatch("integer", {"limit": "5"})
+    assert result.success is True
+    assert result.content == "5"
+
+
+async def test_non_numeric_integer_string_remains_a_tool_error() -> None:
+    registry = ToolRegistry()
+    registry.register(_IntegerTool())
+    result = await registry.dispatch("integer", {"limit": "five"})
+    assert result.success is False
+    assert result.error == "Invalid arguments for 'integer': 'limit' must be an integer"
 
 
 async def test_unknown_tool_returns_structured_error() -> None:

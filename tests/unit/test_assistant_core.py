@@ -140,7 +140,7 @@ async def test_malformed_process_arguments_return_a_safe_partial_reply() -> None
     registry.register(GetProcessesTool())
     llm = _ScriptedLLM(
         [
-            LLMResponse(content="", tool_calls=[_tool_call("system.get_processes", {"limit": "5"})]),
+            LLMResponse(content="", tool_calls=[_tool_call("system.get_processes", {"limit": "five"})]),
             LLMResponse(content="Invented process list."),
         ]
     )
