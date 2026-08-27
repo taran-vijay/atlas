@@ -1,9 +1,7 @@
 from typing import Any
 
-import pytest
-
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
-from atlas.core.tools.registry import PermissionDeniedError, ToolNotFoundError, ToolRegistry
+from atlas.core.tools.registry import ToolRegistry
 
 
 class _EchoTool(Tool):
@@ -48,17 +46,19 @@ async def test_invalid_arguments_return_tool_error_without_raising() -> None:
     assert result.error == "Invalid arguments for 'echo': 'text' is required"
 
 
-async def test_unknown_tool_raises() -> None:
+async def test_unknown_tool_returns_structured_error() -> None:
     registry = ToolRegistry()
-    with pytest.raises(ToolNotFoundError):
-        await registry.dispatch("nope", {})
+    result = await registry.dispatch("nope", {})
+    assert result.success is False
+    assert result.error == "Unknown tool: 'nope'."
 
 
-async def test_privileged_tool_without_confirmation_handler_is_denied() -> None:
+async def test_privileged_tool_without_confirmation_handler_returns_error() -> None:
     registry = ToolRegistry()
     registry.register(_DeleteTool())
-    with pytest.raises(PermissionDeniedError):
-        await registry.dispatch("delete_everything", {"text": "x"})
+    result = await registry.dispatch("delete_everything", {"text": "x"})
+    assert result.success is False
+    assert "requires confirmation" in (result.error or "")
 
 
 async def test_privileged_tool_respects_declined_confirmation() -> None:

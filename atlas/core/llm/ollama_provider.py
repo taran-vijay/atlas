@@ -35,7 +35,7 @@ class OllamaProvider(LLMProvider):
     ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": self._model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [self._serialize_message(message) for message in messages],
             "stream": False,
             "options": {"temperature": self._temperature},
         }
@@ -53,6 +53,16 @@ class OllamaProvider(LLMProvider):
             tool_calls=message.get("tool_calls", []) or [],
             raw=data,
         )
+
+    @staticmethod
+    def _serialize_message(message: ChatMessage) -> dict[str, Any]:
+        """Preserve the provider's tool-call protocol, not just display text."""
+        serialized: dict[str, Any] = {"role": message.role, "content": message.content}
+        if "tool_calls" in message.metadata:
+            serialized["tool_calls"] = message.metadata["tool_calls"]
+        if "tool_name" in message.metadata:
+            serialized["tool_name"] = message.metadata["tool_name"]
+        return serialized
 
     async def is_available(self) -> bool:
         try:

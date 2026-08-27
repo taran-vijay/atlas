@@ -42,7 +42,14 @@ class ToolRegistry:
         return [tool.to_llm_schema() for tool in self._tools.values()]
 
     async def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        tool = self.get(name)
+        try:
+            tool = self.get(name)
+        except ToolNotFoundError:
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"Unknown tool: '{name}'.",
+            )
 
         try:
             tool.validate_arguments(arguments)
@@ -53,14 +60,24 @@ class ToolRegistry:
                 error=f"Invalid arguments for '{tool.name}': {exc}",
             )
 
-        if tool.permission in (PermissionLevel.CONFIRM, PermissionLevel.PRIVILEGED):
-            if self._confirm is None:
-                raise PermissionDeniedError(
-                    f"'{tool.name}' requires confirmation but no confirmation "
-                    "handler is configured"
-                )
-            approved = await self._confirm(tool.name, arguments)
-            if not approved:
-                return ToolResult(success=False, content="", error="User declined confirmation")
-
-        return await tool.execute(arguments)
+        try:
+            if tool.permission in (PermissionLevel.CONFIRM, PermissionLevel.PRIVILEGED):
+                if self._confirm is None:
+                    raise PermissionDeniedError(
+                        f"'{tool.name}' requires confirmation but no confirmation "
+                        "handler is configured"
+                    )
+                approved = await self._confirm(tool.name, arguments)
+                if not approved:
+                    return ToolResult(
+                        success=False, content="", error="User declined confirmation"
+                    )
+            return await tool.execute(arguments)
+        except PermissionDeniedError as exc:
+            return ToolResult(success=False, content="", error=str(exc))
+        except Exception:  # noqa: BLE001 - a tool boundary must contain implementation failures.
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"'{tool.name}' could not complete safely.",
+            )
