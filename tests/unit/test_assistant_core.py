@@ -39,11 +39,13 @@ class _ScriptedLLM(LLMProvider):
     def __init__(self, responses: list[LLMResponse]) -> None:
         self._responses = iter(responses)
         self.messages: list[list[ChatMessage]] = []
+        self.tool_sets: list[list[dict[str, Any]] | None] = []
 
     async def generate(
         self, messages: list[ChatMessage], *, tools: list[dict[str, Any]] | None = None
     ) -> LLMResponse:
         self.messages.append(messages.copy())
+        self.tool_sets.append(tools)
         return next(self._responses)
 
     async def is_available(self) -> bool:
@@ -83,6 +85,24 @@ async def test_handle_message_returns_llm_reply_and_persists_turns() -> None:
 
     history = await memory.recent_turns(10)
     assert [t.role for t in history] == ["user", "assistant"]
+
+
+async def test_casual_message_does_not_offer_system_tools() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([LLMResponse(content="Hello!")])
+    registry = ToolRegistry()
+    registry.register(_StatusTool("system.get_time", ToolResult(True, "10:00 AM.")))
+    core = AssistantCore(
+        assistant_name="Atlas",
+        llm=llm,
+        memory=memory,
+        tools=registry,
+    )
+
+    reply = await core.handle_message("Hello, how are you?")
+
+    assert reply == "Hello!"
+    assert llm.tool_sets == [None]
 
 
 async def test_status_report_preserves_all_structured_tool_results() -> None:

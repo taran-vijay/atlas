@@ -22,7 +22,32 @@ _SYSTEM_PROMPT_TEMPLATE = (
     "For current machine state, only use successful tool-result JSON from this "
     "turn. Never reuse a value from an earlier conversation turn. Never guess or "
     "fill in a value when a tool-result JSON reports status 'error'; clearly say "
-    "that information is unavailable instead."
+    "that information is unavailable instead. Only call a tool when the user "
+    "explicitly asks for information from their computer or files. Never call a "
+    "tool for greetings, casual conversation, writing, brainstorming, or general "
+    "questions."
+)
+
+_TOOL_REQUEST_TERMS = (
+    "battery",
+    "charging",
+    "computer",
+    "cpu",
+    "date",
+    "directory",
+    "file",
+    "folder",
+    "hostname",
+    "ip address",
+    "metadata",
+    "network",
+    "operating system",
+    "os version",
+    "process",
+    "search",
+    "status report",
+    "system",
+    "time",
 )
 
 
@@ -60,11 +85,14 @@ class AssistantCore:
         messages += [ChatMessage(role=turn.role, content=turn.content) for turn in history]
 
         tool_schemas = self._tools.list_schemas()
-        response = await self._llm.generate(messages, tools=tool_schemas or None)
+        tools_enabled = self._user_requested_tool_data(user_input)
+        response = await self._llm.generate(
+            messages, tools=tool_schemas if tools_enabled and tool_schemas else None
+        )
 
         hops = 0
         executed_calls: list[_ExecutedToolCall] = []
-        while response.tool_calls and hops < self._max_tool_hops:
+        while tools_enabled and response.tool_calls and hops < self._max_tool_hops:
             messages.append(
                 ChatMessage(
                     role="assistant",
@@ -104,6 +132,11 @@ class AssistantCore:
 
         await self._memory.add_turn("assistant", reply)
         return reply
+
+    @staticmethod
+    def _user_requested_tool_data(user_input: str) -> bool:
+        normalized = user_input.casefold()
+        return any(term in normalized for term in _TOOL_REQUEST_TERMS)
 
     @staticmethod
     def _incomplete_tool_reply(executed_calls: list[_ExecutedToolCall]) -> str:
