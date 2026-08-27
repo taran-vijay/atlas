@@ -6,6 +6,7 @@ Tool.execute() directly -- everything routes through ToolRegistry.dispatch().
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -42,17 +43,66 @@ class ToolRegistry:
         return [tool.to_llm_schema() for tool in self._tools.values()]
 
     async def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        tool = self.get(name)
-        tool.validate_arguments(arguments)
+        try:
+            tool = self.get(name)
+        except ToolNotFoundError:
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"Unknown tool: '{name}'.",
+            )
 
-        if tool.permission in (PermissionLevel.CONFIRM, PermissionLevel.PRIVILEGED):
-            if self._confirm is None:
-                raise PermissionDeniedError(
-                    f"'{tool.name}' requires confirmation but no confirmation "
-                    "handler is configured"
-                )
-            approved = await self._confirm(tool.name, arguments)
-            if not approved:
-                return ToolResult(success=False, content="", error="User declined confirmation")
+        arguments = self._normalize_arguments(tool, arguments)
 
-        return await tool.execute(arguments)
+        try:
+            tool.validate_arguments(arguments)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"Invalid arguments for '{tool.name}': {exc}",
+            )
+
+        try:
+            if tool.permission in (PermissionLevel.CONFIRM, PermissionLevel.PRIVILEGED):
+                if self._confirm is None:
+                    raise PermissionDeniedError(
+                        f"'{tool.name}' requires confirmation but no confirmation "
+                        "handler is configured"
+                    )
+                approved = await self._confirm(tool.name, arguments)
+                if not approved:
+                    return ToolResult(
+                        success=False, content="", error="User declined confirmation"
+                    )
+            return await tool.execute(arguments)
+        except PermissionDeniedError as exc:
+            return ToolResult(success=False, content="", error=str(exc))
+        except Exception:  # noqa: BLE001 - a tool boundary must contain implementation failures.
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"'{tool.name}' could not complete safely.",
+            )
+
+    @staticmethod
+    def _normalize_arguments(tool: Tool, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Canonicalize safe integer strings emitted by local tool-calling models.
+
+        Coercion is limited to properties that the tool's own JSON schema declares
+        as integers; every other validation rule still runs unchanged.
+        """
+        normalized = arguments.copy()
+        properties = tool.parameters.get("properties", {})
+        if not isinstance(properties, dict):
+            return normalized
+        for key, schema in properties.items():
+            value = normalized.get(key)
+            if (
+                isinstance(schema, dict)
+                and schema.get("type") == "integer"
+                and isinstance(value, str)
+                and re.fullmatch(r"[+-]?\d+", value.strip())
+            ):
+                normalized[key] = int(value)
+        return normalized

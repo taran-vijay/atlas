@@ -6,6 +6,7 @@ permissions before a Tool's execute() ever runs. See docs/security-model.md.
 """
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
@@ -24,6 +25,21 @@ class ToolResult:
     content: str
     data: dict[str, Any] | None = None
     error: str | None = None
+
+    def to_llm_content(self, tool_name: str) -> str:
+        """Serialize an outcome in a stable, machine-readable form for the LLM.
+
+        Tool output can contain arbitrary local data, so it is deliberately kept
+        as data rather than being spliced into an instruction-like prompt.
+        """
+        payload: dict[str, Any] = {"tool": tool_name, "status": "success"}
+        if self.success:
+            payload["data"] = self.data
+            payload["display"] = self.content
+        else:
+            payload["status"] = "error"
+            payload["error"] = self.error or "The tool failed without an error message."
+        return json.dumps(payload, sort_keys=True, default=str)
 
 
 class Tool(ABC):

@@ -10,7 +10,14 @@ from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ToolRegistry
-from atlas.core.tools.system_tools import GetSystemInfoTool, GetTimeTool, ListDirectoryTool
+from atlas.core.tools.system_tools import (
+    GetBatteryTool,
+    GetNetworkInfoTool,
+    GetProcessesTool,
+    GetSystemInfoTool,
+    GetTimeTool,
+    ListDirectoryTool,
+)
 
 
 def _configure_logging(config: AtlasConfig) -> None:
@@ -30,6 +37,9 @@ def _build_tool_registry() -> ToolRegistry:
     tools.register(GetTimeTool())
     tools.register(GetSystemInfoTool())
     tools.register(ListDirectoryTool())
+    tools.register(GetBatteryTool())
+    tools.register(GetProcessesTool())
+    tools.register(GetNetworkInfoTool())
     return tools
 
 
