@@ -71,6 +71,178 @@ class ListDirectoryTool(Tool):
         return ToolResult(success=True, content=content, data=data)
 
 
+class ReadFileTool(Tool):
+    """Read a bounded UTF-8 text file without following symlinks."""
+
+    _DEFAULT_MAX_BYTES = 65_536
+    _MAX_BYTES = 262_144
+
+    def __init__(self) -> None:
+        self.name = "filesystem.read_file"
+        self.description = (
+            "Read a bounded UTF-8 text file. This is read-only; binary files, directories, "
+            "and symlinks are rejected."
+        )
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path of the text file to read."},
+                "max_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": self._MAX_BYTES,
+                    "default": self._DEFAULT_MAX_BYTES,
+                },
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.READ_ONLY
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        path = arguments.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("'path' must be a non-empty string")
+        max_bytes = arguments.get("max_bytes", self._DEFAULT_MAX_BYTES)
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool):
+            raise TypeError("'max_bytes' must be an integer")
+        if not 1 <= max_bytes <= self._MAX_BYTES:
+            raise ValueError(f"'max_bytes' must be between 1 and {self._MAX_BYTES}")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        path = Path(arguments["path"]).expanduser()
+        max_bytes = arguments.get("max_bytes", self._DEFAULT_MAX_BYTES)
+        if path.is_symlink():
+            return ToolResult(success=False, content="", error="Refusing to read a symlink.")
+        if not path.exists():
+            return ToolResult(success=False, content="", error=f"Path does not exist: {path}")
+        if not path.is_file():
+            return ToolResult(success=False, content="", error=f"Path is not a regular file: {path}")
+
+        try:
+            contents = await asyncio.to_thread(self._read_text, path, max_bytes)
+        except UnicodeDecodeError:
+            return ToolResult(success=False, content="", error="File is not valid UTF-8 text.")
+        except OSError:
+            return ToolResult(success=False, content="", error=f"Could not read file: {path}")
+
+        truncated = path.stat().st_size > len(contents.encode("utf-8"))
+        data = {"path": str(path.resolve()), "content": contents, "truncated": truncated}
+        suffix = "\n[Output truncated.]" if truncated else ""
+        return ToolResult(success=True, content=contents + suffix, data=data)
+
+    @staticmethod
+    def _read_text(path: Path, max_bytes: int) -> str:
+        with path.open("rb") as file:
+            return file.read(max_bytes).decode("utf-8")
+
+
+class GetFileMetadataTool(Tool):
+    def __init__(self) -> None:
+        self.name = "filesystem.get_metadata"
+        self.description = "Return read-only metadata for a local file or directory."
+        self.parameters = {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Path to inspect."}},
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.READ_ONLY
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        path = arguments.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("'path' must be a non-empty string")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        path = Path(arguments["path"]).expanduser()
+        if not path.exists() and not path.is_symlink():
+            return ToolResult(success=False, content="", error=f"Path does not exist: {path}")
+        try:
+            stat = await asyncio.to_thread(path.lstat)
+        except OSError:
+            return ToolResult(success=False, content="", error=f"Could not inspect path: {path}")
+
+        if path.is_symlink():
+            kind = "symlink"
+        elif path.is_dir():
+            kind = "directory"
+        elif path.is_file():
+            kind = "file"
+        else:
+            kind = "other"
+        data = {
+            "path": str(path.absolute()),
+            "type": kind,
+            "size_bytes": stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(),
+        }
+        content = (
+            f"{kind.title()}: {data['path']}\nSize: {stat.st_size} bytes\n"
+            f"Modified: {data['modified_at']}"
+        )
+        return ToolResult(success=True, content=content, data=data)
+
+
+class SearchFilesTool(Tool):
+    _DEFAULT_LIMIT = 20
+    _MAX_LIMIT = 100
+
+    def __init__(self) -> None:
+        self.name = "filesystem.search"
+        self.description = "Search file and directory names beneath a local directory without reading contents."
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Directory to search."},
+                "query": {"type": "string", "description": "Case-insensitive filename text to find."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": self._MAX_LIMIT, "default": self._DEFAULT_LIMIT},
+            },
+            "required": ["path", "query"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.READ_ONLY
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        for key in ("path", "query"):
+            value = arguments.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"'{key}' must be a non-empty string")
+        limit = arguments.get("limit", self._DEFAULT_LIMIT)
+        if not isinstance(limit, int) or isinstance(limit, bool):
+            raise TypeError("'limit' must be an integer")
+        if not 1 <= limit <= self._MAX_LIMIT:
+            raise ValueError(f"'limit' must be between 1 and {self._MAX_LIMIT}")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        root = Path(arguments["path"]).expanduser()
+        if not root.exists():
+            return ToolResult(success=False, content="", error=f"Path does not exist: {root}")
+        if not root.is_dir():
+            return ToolResult(success=False, content="", error=f"Path is not a directory: {root}")
+        limit = arguments.get("limit", self._DEFAULT_LIMIT)
+        try:
+            matches = await asyncio.to_thread(
+                self._find_matches, root, arguments["query"].casefold(), limit
+            )
+        except OSError:
+            return ToolResult(success=False, content="", error=f"Could not search directory: {root}")
+
+        data = {"path": str(root.resolve()), "query": arguments["query"], "matches": matches}
+        content = "\n".join(matches) if matches else "No matching paths found."
+        return ToolResult(success=True, content=content, data=data)
+
+    @staticmethod
+    def _find_matches(root: Path, query: str, limit: int) -> list[str]:
+        matches: list[str] = []
+        for path in root.rglob("*"):
+            if query in path.name.casefold():
+                matches.append(str(path))
+                if len(matches) == limit:
+                    break
+        return matches
+
+
 class GetBatteryTool(Tool):
     def __init__(self) -> None:
         self.name = "system.get_battery"

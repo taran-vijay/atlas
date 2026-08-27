@@ -12,11 +12,14 @@ from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ToolRegistry
 from atlas.core.tools.system_tools import (
     GetBatteryTool,
+    GetFileMetadataTool,
     GetNetworkInfoTool,
     GetProcessesTool,
     GetSystemInfoTool,
     GetTimeTool,
     ListDirectoryTool,
+    ReadFileTool,
+    SearchFilesTool,
 )
 
 
@@ -37,6 +40,9 @@ def _build_tool_registry() -> ToolRegistry:
     tools.register(GetTimeTool())
     tools.register(GetSystemInfoTool())
     tools.register(ListDirectoryTool())
+    tools.register(ReadFileTool())
+    tools.register(GetFileMetadataTool())
+    tools.register(SearchFilesTool())
     tools.register(GetBatteryTool())
     tools.register(GetProcessesTool())
     tools.register(GetNetworkInfoTool())
