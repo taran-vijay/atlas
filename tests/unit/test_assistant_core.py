@@ -124,6 +124,22 @@ async def test_casual_message_retries_as_plain_chat_after_spurious_tool_call() -
     assert llm.messages[1][-1].content == _NO_TOOL_RESPONSE_PROMPT
 
 
+async def test_casual_message_retries_after_no_action_taken_reply() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM(
+        [
+            LLMResponse(content="No action taken."),
+            LLMResponse(content="Hi! How can I help today?"),
+        ]
+    )
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Hello")
+
+    assert reply == "Hi! How can I help today?"
+    assert llm.tool_sets == [None, None]
+
+
 async def test_status_report_preserves_all_structured_tool_results() -> None:
     memory = _InMemoryStore()
     registry = ToolRegistry()

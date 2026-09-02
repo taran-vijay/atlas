@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from atlas.core.llm.base import ChatMessage, LLMProvider
+from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.base import MemoryStore
 from atlas.core.tools.base import ToolResult
 from atlas.core.tools.registry import ToolRegistry
@@ -30,8 +30,12 @@ _SYSTEM_PROMPT_TEMPLATE = (
 
 _NO_TOOL_RESPONSE_PROMPT = (
     "No tools are available for this request. Respond directly as a normal conversational "
-    "assistant. Do not describe an action, request a tool, or say that no action was taken."
+    "assistant. Answer the user in natural language. Do not describe an action, request a "
+    "tool, say that no action was taken, or claim information is unavailable unless the user "
+    "asked for current machine or file data."
 )
+
+_NON_CONVERSATIONAL_REPLIES = {"no action taken.", "no action taken"}
 
 _TOOL_REQUEST_TERMS = (
     "battery",
@@ -95,7 +99,7 @@ class AssistantCore:
             messages, tools=tool_schemas if tools_enabled and tool_schemas else None
         )
 
-        if not tools_enabled and (response.tool_calls or not response.content.strip()):
+        if not tools_enabled and self._needs_plain_chat_retry(response):
             messages.append(ChatMessage(role="system", content=_NO_TOOL_RESPONSE_PROMPT))
             response = await self._llm.generate(messages, tools=None)
 
@@ -147,6 +151,12 @@ class AssistantCore:
         """Offer tools only for explicit local-machine or local-file requests."""
         normalized = user_input.casefold()
         return any(term in normalized for term in _TOOL_REQUEST_TERMS)
+
+    @staticmethod
+    def _needs_plain_chat_retry(response: LLMResponse) -> bool:
+        return bool(response.tool_calls) or not response.content.strip() or (
+            response.content.strip().casefold() in _NON_CONVERSATIONAL_REPLIES
+        )
 
     @staticmethod
     def _incomplete_tool_reply(executed_calls: list[_ExecutedToolCall]) -> str:
