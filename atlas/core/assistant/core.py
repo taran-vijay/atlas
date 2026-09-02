@@ -32,7 +32,9 @@ _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE = (
     "You are {name}, a helpful local personal assistant. You are capable of normal casual "
     "conversation, answering general questions, writing, and brainstorming without tools. "
     "Reply directly and naturally to the user. Never say that you cannot have a casual "
-    "conversation or that no action was taken."
+    "conversation or that no action was taken. Never claim to have accessed a user's private "
+    "device data or an external service unless a tool result in this conversation provides it; "
+    "say you are unable to access it instead."
 )
 
 _NON_CONVERSATIONAL_REPLIES = {
@@ -64,10 +66,18 @@ _TOOL_REQUEST_TERMS = (
 )
 
 _UNAVAILABLE_INTEGRATION_TERMS = {
-    "Calendar": ("calendar", "appointment", "upcoming event", "schedule"),
+    "Calendar": ("calendar", "appointment", "upcoming event", "schedule", "events"),
     "Reminders": ("reminder", "reminders"),
     "Contacts": ("contact", "contacts", "address book"),
-    "Mail": ("email inbox", "emails", "mail inbox"),
+    "Mail": ("email", "emails", "mail", "inbox"),
+    "Messages": ("text messages", "imessages", "messages"),
+    "Browser": ("browser history", "browser tabs", "open safari", "open chrome"),
+    "Clipboard": ("clipboard", "copied text"),
+    "Photos": ("photos library", "my photos"),
+    "Music": ("apple music", "spotify", "my music"),
+    "Location": ("my location", "where am i"),
+    "System Settings": ("disk space", "storage usage", "wifi password", "screen brightness"),
+    "Desktop Actions": ("open an app", "launch an app", "close an app", "send an email"),
 }
 
 
