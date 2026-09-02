@@ -23,6 +23,7 @@ dev = [
 [project.scripts]
 atlas = "atlas.cli:main"
 atlas-web = "atlas.web:main"
+atlas-app = "atlas.app:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

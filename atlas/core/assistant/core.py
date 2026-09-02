@@ -63,6 +63,13 @@ _TOOL_REQUEST_TERMS = (
     "time",
 )
 
+_UNAVAILABLE_INTEGRATION_TERMS = {
+    "Calendar": ("calendar", "appointment", "upcoming event", "schedule"),
+    "Reminders": ("reminder", "reminders"),
+    "Contacts": ("contact", "contacts", "address book"),
+    "Mail": ("email inbox", "emails", "mail inbox"),
+}
+
 
 @dataclass
 class _ExecutedToolCall:
@@ -90,6 +97,15 @@ class AssistantCore:
 
     async def handle_message(self, user_input: str) -> str:
         await self._memory.add_turn("user", user_input)
+        unavailable_integration = self._unavailable_integration(user_input)
+        if unavailable_integration is not None:
+            reply = (
+                f"I’m unable to access your {unavailable_integration} because Atlas does not "
+                "have an integration for it yet."
+            )
+            await self._memory.add_turn("assistant", reply)
+            return reply
+
         history = await self._memory.recent_turns(self._max_history_turns)
         tools_enabled = self._user_requested_tool_data(user_input)
         system_prompt = (
@@ -168,6 +184,14 @@ class AssistantCore:
         """Offer tools only for explicit local-machine or local-file requests."""
         normalized = user_input.casefold()
         return any(term in normalized for term in _TOOL_REQUEST_TERMS)
+
+    @staticmethod
+    def _unavailable_integration(user_input: str) -> str | None:
+        normalized = user_input.casefold()
+        for integration, terms in _UNAVAILABLE_INTEGRATION_TERMS.items():
+            if any(term in normalized for term in terms):
+                return integration
+        return None
 
     @staticmethod
     def _needs_plain_chat_retry(response: LLMResponse) -> bool:
