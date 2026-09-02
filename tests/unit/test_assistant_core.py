@@ -1,6 +1,6 @@
 from typing import Any
 
-from atlas.core.assistant.core import AssistantCore
+from atlas.core.assistant.core import _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.base import MemoryStore, MemoryTurn
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
@@ -39,11 +39,13 @@ class _ScriptedLLM(LLMProvider):
     def __init__(self, responses: list[LLMResponse]) -> None:
         self._responses = iter(responses)
         self.messages: list[list[ChatMessage]] = []
+        self.tool_sets: list[list[dict[str, Any]] | None] = []
 
     async def generate(
         self, messages: list[ChatMessage], *, tools: list[dict[str, Any]] | None = None
     ) -> LLMResponse:
         self.messages.append(messages.copy())
+        self.tool_sets.append(tools)
         return next(self._responses)
 
     async def is_available(self) -> bool:
@@ -83,6 +85,71 @@ async def test_handle_message_returns_llm_reply_and_persists_turns() -> None:
 
     history = await memory.recent_turns(10)
     assert [t.role for t in history] == ["user", "assistant"]
+
+
+async def test_casual_message_does_not_offer_system_tools() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([LLMResponse(content="Hello!")])
+    registry = ToolRegistry()
+    registry.register(_StatusTool("system.get_time", ToolResult(True, "10:00 AM.")))
+    core = AssistantCore(
+        assistant_name="Atlas",
+        llm=llm,
+        memory=memory,
+        tools=registry,
+    )
+
+    reply = await core.handle_message("Hello, how are you?")
+
+    assert reply == "Hello!"
+    assert llm.tool_sets == [None]
+
+
+async def test_casual_message_retries_as_plain_chat_after_spurious_tool_call() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM(
+        [
+            LLMResponse(content="", tool_calls=[_tool_call("system.get_time")]),
+            LLMResponse(content="I am doing well—how can I help?"),
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(_StatusTool("system.get_time", ToolResult(True, "10:00 AM.")))
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=registry)
+
+    reply = await core.handle_message("Hello, how are you?")
+
+    assert reply == "I am doing well—how can I help?"
+    assert llm.tool_sets == [None, None]
+    assert llm.messages[1][0].content == _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE.format(name="Atlas")
+
+
+async def test_casual_message_retries_after_no_action_taken_reply() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM(
+        [
+            LLMResponse(content="assistant\n\nNo action taken."),
+            LLMResponse(content="Hi! How can I help today?"),
+        ]
+    )
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Hello")
+
+    assert reply == "Hi! How can I help today?"
+    assert llm.tool_sets == [None, None]
+
+
+async def test_bad_historical_reply_is_not_sent_back_to_the_model() -> None:
+    memory = _InMemoryStore()
+    await memory.add_turn("assistant", "assistant\n\nNo action taken.")
+    llm = _ScriptedLLM([LLMResponse(content="Hello! What would you like to discuss?")])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Hello")
+
+    assert reply == "Hello! What would you like to discuss?"
+    assert all(message.content != "assistant\n\nNo action taken." for message in llm.messages[0])
 
 
 async def test_status_report_preserves_all_structured_tool_results() -> None:
