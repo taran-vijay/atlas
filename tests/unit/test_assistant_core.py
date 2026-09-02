@@ -1,6 +1,6 @@
 from typing import Any
 
-from atlas.core.assistant.core import _NO_TOOL_RESPONSE_PROMPT, AssistantCore
+from atlas.core.assistant.core import _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.base import MemoryStore, MemoryTurn
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
@@ -121,7 +121,7 @@ async def test_casual_message_retries_as_plain_chat_after_spurious_tool_call() -
 
     assert reply == "I am doing well—how can I help?"
     assert llm.tool_sets == [None, None]
-    assert llm.messages[1][0].content == _NO_TOOL_RESPONSE_PROMPT
+    assert llm.messages[1][0].content == _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE.format(name="Atlas")
 
 
 async def test_casual_message_retries_after_no_action_taken_reply() -> None:
