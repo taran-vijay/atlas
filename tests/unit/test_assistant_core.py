@@ -1,6 +1,6 @@
 from typing import Any
 
-from atlas.core.assistant.core import AssistantCore
+from atlas.core.assistant.core import _NO_TOOL_RESPONSE_PROMPT, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
 from atlas.core.memory.base import MemoryStore, MemoryTurn
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
@@ -103,6 +103,25 @@ async def test_casual_message_does_not_offer_system_tools() -> None:
 
     assert reply == "Hello!"
     assert llm.tool_sets == [None]
+
+
+async def test_casual_message_retries_as_plain_chat_after_spurious_tool_call() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM(
+        [
+            LLMResponse(content="", tool_calls=[_tool_call("system.get_time")]),
+            LLMResponse(content="I am doing well—how can I help?"),
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(_StatusTool("system.get_time", ToolResult(True, "10:00 AM.")))
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=registry)
+
+    reply = await core.handle_message("Hello, how are you?")
+
+    assert reply == "I am doing well—how can I help?"
+    assert llm.tool_sets == [None, None]
+    assert llm.messages[1][-1].content == _NO_TOOL_RESPONSE_PROMPT
 
 
 async def test_status_report_preserves_all_structured_tool_results() -> None:

@@ -28,6 +28,11 @@ _SYSTEM_PROMPT_TEMPLATE = (
     "questions."
 )
 
+_NO_TOOL_RESPONSE_PROMPT = (
+    "No tools are available for this request. Respond directly as a normal conversational "
+    "assistant. Do not describe an action, request a tool, or say that no action was taken."
+)
+
 _TOOL_REQUEST_TERMS = (
     "battery",
     "charging",
@@ -90,6 +95,10 @@ class AssistantCore:
             messages, tools=tool_schemas if tools_enabled and tool_schemas else None
         )
 
+        if not tools_enabled and (response.tool_calls or not response.content.strip()):
+            messages.append(ChatMessage(role="system", content=_NO_TOOL_RESPONSE_PROMPT))
+            response = await self._llm.generate(messages, tools=None)
+
         hops = 0
         executed_calls: list[_ExecutedToolCall] = []
         while tools_enabled and response.tool_calls and hops < self._max_tool_hops:
@@ -135,6 +144,7 @@ class AssistantCore:
 
     @staticmethod
     def _user_requested_tool_data(user_input: str) -> bool:
+        """Offer tools only for explicit local-machine or local-file requests."""
         normalized = user_input.casefold()
         return any(term in normalized for term in _TOOL_REQUEST_TERMS)
 
