@@ -121,14 +121,14 @@ async def test_casual_message_retries_as_plain_chat_after_spurious_tool_call() -
 
     assert reply == "I am doing well—how can I help?"
     assert llm.tool_sets == [None, None]
-    assert llm.messages[1][-1].content == _NO_TOOL_RESPONSE_PROMPT
+    assert llm.messages[1][0].content == _NO_TOOL_RESPONSE_PROMPT
 
 
 async def test_casual_message_retries_after_no_action_taken_reply() -> None:
     memory = _InMemoryStore()
     llm = _ScriptedLLM(
         [
-            LLMResponse(content="No action taken."),
+            LLMResponse(content="assistant\n\nNo action taken."),
             LLMResponse(content="Hi! How can I help today?"),
         ]
     )
@@ -138,6 +138,18 @@ async def test_casual_message_retries_after_no_action_taken_reply() -> None:
 
     assert reply == "Hi! How can I help today?"
     assert llm.tool_sets == [None, None]
+
+
+async def test_bad_historical_reply_is_not_sent_back_to_the_model() -> None:
+    memory = _InMemoryStore()
+    await memory.add_turn("assistant", "assistant\n\nNo action taken.")
+    llm = _ScriptedLLM([LLMResponse(content="Hello! What would you like to discuss?")])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Hello")
+
+    assert reply == "Hello! What would you like to discuss?"
+    assert all(message.content != "assistant\n\nNo action taken." for message in llm.messages[0])
 
 
 async def test_status_report_preserves_all_structured_tool_results() -> None:

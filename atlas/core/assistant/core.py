@@ -91,7 +91,11 @@ class AssistantCore:
         messages = [
             ChatMessage(role="system", content=_SYSTEM_PROMPT_TEMPLATE.format(name=self._name))
         ]
-        messages += [ChatMessage(role=turn.role, content=turn.content) for turn in history]
+        messages += [
+            ChatMessage(role=turn.role, content=turn.content)
+            for turn in history
+            if not (turn.role == "assistant" and self._is_non_conversational_reply(turn.content))
+        ]
 
         tool_schemas = self._tools.list_schemas()
         tools_enabled = self._user_requested_tool_data(user_input)
@@ -100,8 +104,11 @@ class AssistantCore:
         )
 
         if not tools_enabled and self._needs_plain_chat_retry(response):
-            messages.append(ChatMessage(role="system", content=_NO_TOOL_RESPONSE_PROMPT))
-            response = await self._llm.generate(messages, tools=None)
+            plain_chat_messages = [
+                ChatMessage(role="system", content=_NO_TOOL_RESPONSE_PROMPT),
+                *messages[1:],
+            ]
+            response = await self._llm.generate(plain_chat_messages, tools=None)
 
         hops = 0
         executed_calls: list[_ExecutedToolCall] = []
@@ -154,9 +161,16 @@ class AssistantCore:
 
     @staticmethod
     def _needs_plain_chat_retry(response: LLMResponse) -> bool:
-        return bool(response.tool_calls) or not response.content.strip() or (
-            response.content.strip().casefold() in _NON_CONVERSATIONAL_REPLIES
+        return bool(response.tool_calls) or not response.content.strip() or AssistantCore._is_non_conversational_reply(
+            response.content
         )
+
+    @staticmethod
+    def _is_non_conversational_reply(content: str) -> bool:
+        normalized = content.strip().casefold()
+        if normalized.startswith("assistant"):
+            normalized = normalized.removeprefix("assistant").strip()
+        return normalized in _NON_CONVERSATIONAL_REPLIES
 
     @staticmethod
     def _incomplete_tool_reply(executed_calls: list[_ExecutedToolCall]) -> str:
