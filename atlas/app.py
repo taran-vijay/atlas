@@ -10,6 +10,7 @@ import logging
 import platform
 import threading
 import tkinter as tk
+from datetime import datetime
 from tkinter import scrolledtext
 from typing import Protocol
 
@@ -30,6 +31,7 @@ class AtlasDesktopApp:
         self._assistant = assistant
         self._name = name
         self._busy = False
+        self._field_state = "READY"
         self._configure_window()
         self._build_interface()
 
@@ -63,6 +65,14 @@ class AtlasDesktopApp:
         tk.Label(sidebar, text="Encrypted by locality.\nNever leaves this Mac.", justify=tk.LEFT, fg="#dce9f3", bg="#0c1420", font=("Helvetica", 12)).pack(
             anchor=tk.W, padx=25, pady=(7, 0)
         )
+        field = tk.Frame(sidebar, bg="#0a111b", highlightbackground="#2d7080", highlightthickness=1)
+        field.pack(fill=tk.X, padx=20, pady=(24, 0))
+        tk.Label(field, text="ATLAS FIELD // 01", fg="#73e0d4", bg="#0a111b", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=14, pady=(13, 3))
+        self._field_state_label = tk.Label(field, text="◈  READY", fg="#f6c35c", bg="#0a111b", font=("Helvetica", 13, "bold"))
+        self._field_state_label.pack(anchor=tk.W, padx=14)
+        self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
+        self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
+        tk.Label(field, text="09 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
         status = tk.Frame(sidebar, bg="#101b29", highlightbackground="#24455b", highlightthickness=1)
         status.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
         tk.Label(status, text="●  CORE ONLINE", fg="#73e0d4", bg="#101b29", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=14, pady=(13, 3))
@@ -91,6 +101,18 @@ class AtlasDesktopApp:
         self._send_button = tk.Button(composer, text="Transmit", command=self._send, bg="#73e0d4", fg="#061210", activebackground="#a4fff6", relief=tk.FLAT, font=("Helvetica", 11, "bold"), padx=22, pady=12)
         self._send_button.pack(side=tk.RIGHT, padx=(0, 14), pady=14)
         self._input.focus_set()
+        self._refresh_field()
+
+    def _refresh_field(self) -> None:
+        now = datetime.now().astimezone().strftime("LOCAL TIME  %H:%M:%S  %Z")
+        self._field_clock.configure(text=now)
+        self._root.after(1_000, self._refresh_field)
+
+    def _set_field_state(self, state: str) -> None:
+        self._field_state = state
+        colors = {"READY": "#f6c35c", "PROCESSING": "#73e0d4"}
+        marker = "◈" if state == "READY" else "◌"
+        self._field_state_label.configure(text=f"{marker}  {state}", fg=colors[state])
 
     def _append(self, speaker: str, message: str) -> None:
         self._transcript.configure(state=tk.NORMAL)
@@ -113,6 +135,7 @@ class AtlasDesktopApp:
         self._input.delete("1.0", tk.END)
         self._append("You", message)
         self._busy = True
+        self._set_field_state("PROCESSING")
         self._send_button.configure(state=tk.DISABLED, text="Thinking…")
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
 
@@ -127,6 +150,7 @@ class AtlasDesktopApp:
     def _finish_reply(self, reply: str) -> None:
         self._append(self._name, reply)
         self._busy = False
+        self._set_field_state("READY")
         self._send_button.configure(state=tk.NORMAL, text="Send")
         self._input.focus_set()
 
