@@ -26,7 +26,8 @@ _TOOL_SYSTEM_PROMPT_TEMPLATE = (
     "that information is unavailable instead. Only call a tool when the user "
     "explicitly asks for information from their computer or files. Never call a "
     "tool for greetings, casual conversation, writing, brainstorming, or general "
-    "questions."
+    "questions. Tools that perform an action require the user's explicit approval "
+    "in the desktop app before they execute."
 )
 
 _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE = (
@@ -64,6 +65,10 @@ _TOOL_REQUEST_TERMS = (
     "status report",
     "system",
     "time",
+    "open ",
+    "launch ",
+    "copy ",
+    "clipboard",
 )
 
 _UNAVAILABLE_INTEGRATION_TERMS = {
@@ -72,13 +77,13 @@ _UNAVAILABLE_INTEGRATION_TERMS = {
     "Contacts": ("contact", "contacts", "address book"),
     "Mail": ("email", "emails", "mail", "inbox"),
     "Messages": ("text messages", "imessages", "messages"),
-    "Browser": ("browser history", "browser tabs", "open safari", "open chrome"),
-    "Clipboard": ("clipboard", "copied text"),
+    "Browser": ("browser history", "browser tabs"),
+    "Clipboard": ("what is in my clipboard", "read my clipboard", "show my clipboard"),
     "Photos": ("photos library", "my photos"),
     "Music": ("apple music", "spotify", "my music"),
     "Location": ("my location", "where am i"),
     "System Settings": ("disk space", "storage usage", "wifi password", "screen brightness"),
-    "Desktop Actions": ("open an app", "launch an app", "close an app", "send an email"),
+    "Desktop Actions": ("close an app", "send an email"),
 }
 
 _MEMORY_SENSITIVE_TERMS = (

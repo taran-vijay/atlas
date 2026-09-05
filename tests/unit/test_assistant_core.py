@@ -251,6 +251,19 @@ async def test_unavailable_desktop_integrations_are_all_refused() -> None:
     assert llm.messages == []
 
 
+async def test_open_application_request_offers_tools_instead_of_refusing_it() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([LLMResponse(content="I can open Calculator after you approve it.")])
+    registry = ToolRegistry()
+    registry.register(_StatusTool("desktop.open_application", ToolResult(True, "Opened successfully.")))
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=registry)
+
+    reply = await core.handle_message("Open Calculator")
+
+    assert reply == "I can open Calculator after you approve it."
+    assert llm.tool_sets[0] is not None
+
+
 async def test_status_report_preserves_all_structured_tool_results() -> None:
     memory = _InMemoryStore()
     registry = ToolRegistry()
