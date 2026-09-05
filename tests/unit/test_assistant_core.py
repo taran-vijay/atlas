@@ -152,6 +152,44 @@ async def test_bad_historical_reply_is_not_sent_back_to_the_model() -> None:
     assert all(message.content != "assistant\n\nNo action taken." for message in llm.messages[0])
 
 
+async def test_calendar_request_is_refused_without_asking_the_model() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("What is on my calendar?")
+
+    assert reply == "I’m unable to access your Calendar because Atlas does not have an integration for it yet."
+    assert llm.messages == []
+
+
+async def test_mail_request_is_refused_without_asking_the_model() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Hi, can you tell me what is on my mail?")
+
+    assert reply == "I’m unable to access your Mail because Atlas does not have an integration for it yet."
+    assert llm.messages == []
+
+
+async def test_unavailable_desktop_integrations_are_all_refused() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    for request, integration in [
+        ("Show my text messages", "Messages"),
+        ("What is in my clipboard?", "Clipboard"),
+        ("What is my location?", "Location"),
+    ]:
+        reply = await core.handle_message(request)
+        assert f"unable to access your {integration}" in reply
+
+    assert llm.messages == []
+
+
 async def test_status_report_preserves_all_structured_tool_results() -> None:
     memory = _InMemoryStore()
     registry = ToolRegistry()

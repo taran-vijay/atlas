@@ -22,6 +22,8 @@ dev = [
 
 [project.scripts]
 atlas = "atlas.cli:main"
+atlas-web = "atlas.web:main"
+atlas-app = "atlas.app:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -29,6 +31,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["atlas*"]
+
+[tool.setuptools.package-data]
+atlas = ["assets/*.png"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
