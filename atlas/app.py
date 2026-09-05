@@ -32,6 +32,8 @@ class AtlasDesktopApp:
         self._name = name
         self._busy = False
         self._field_state = "READY"
+        self._thinking = False
+        self._thinking_frame = 0
         self._configure_window()
         self._build_interface()
 
@@ -45,9 +47,11 @@ class AtlasDesktopApp:
         sidebar = tk.Frame(self._root, bg="#0c1420", width=250)
         sidebar.pack(side=tk.LEFT, fill=tk.Y)
         sidebar.pack_propagate(False)
-        tk.Label(sidebar, text="◉  ATLAS", fg="#73e0d4", bg="#0c1420", font=("Helvetica", 19, "bold")).pack(
-            anchor=tk.W, padx=24, pady=(30, 4)
-        )
+        brand = tk.Frame(sidebar, bg="#0c1420")
+        brand.pack(anchor=tk.W, padx=24, pady=(30, 4))
+        self._top_dot = tk.Label(brand, text="◉", fg="#73e0d4", bg="#0c1420", font=("Helvetica", 19, "bold"))
+        self._top_dot.pack(side=tk.LEFT)
+        tk.Label(brand, text="  ATLAS", fg="#73e0d4", bg="#0c1420", font=("Helvetica", 19, "bold")).pack(side=tk.LEFT)
         tk.Label(sidebar, text="ORBITAL LOCAL INTELLIGENCE", fg="#7e90a6", bg="#0c1420", font=("Helvetica", 9, "bold")).pack(
             anchor=tk.W, padx=25
         )
@@ -96,6 +100,7 @@ class AtlasDesktopApp:
         composer.pack(fill=tk.X, pady=(1, 0))
         self._input = tk.Text(composer, height=3, wrap=tk.WORD, bg="#091019", fg="#e9edf2", insertbackground="#73e0d4", relief=tk.FLAT, padx=12, pady=10, font=("Helvetica", 12))
         self._input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(14, 8), pady=14)
+        self._input.bind("<Return>", self._send_event)
         self._input.bind("<Command-Return>", self._send_event)
         self._input.bind("<Control-Return>", self._send_event)
         self._send_button = tk.Button(composer, text="Transmit", command=self._send, bg="#73e0d4", fg="#061210", activebackground="#a4fff6", relief=tk.FLAT, font=("Helvetica", 11, "bold"), padx=22, pady=12)
@@ -113,6 +118,19 @@ class AtlasDesktopApp:
         colors = {"READY": "#f6c35c", "PROCESSING": "#73e0d4"}
         marker = "◈" if state == "READY" else "◌"
         self._field_state_label.configure(text=f"{marker}  {state}", fg=colors[state])
+        self._thinking = state == "PROCESSING"
+        if self._thinking:
+            self._animate_top_dot()
+        else:
+            self._top_dot.configure(text="◉", fg="#73e0d4")
+
+    def _animate_top_dot(self) -> None:
+        if not self._thinking:
+            return
+        frames = ("◔", "◑", "◕", "◒")
+        self._top_dot.configure(text=frames[self._thinking_frame % len(frames)], fg="#f6c35c")
+        self._thinking_frame += 1
+        self._root.after(120, self._animate_top_dot)
 
     def _append(self, speaker: str, message: str) -> None:
         self._transcript.configure(state=tk.NORMAL)

@@ -12,3 +12,4 @@ def test_desktop_module_exposes_connection_verified_boot_screen() -> None:
 def test_desktop_app_exposes_live_atlas_field_updates() -> None:
     assert hasattr(AtlasDesktopApp, "_refresh_field")
     assert hasattr(AtlasDesktopApp, "_set_field_state")
+    assert hasattr(AtlasDesktopApp, "_animate_top_dot")
