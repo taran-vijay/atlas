@@ -17,6 +17,13 @@ class MemoryTurn:
     timestamp: float
 
 
+@dataclass
+class SavedMemory:
+    id: int
+    content: str
+    created_at: float
+
+
 class MemoryStore(ABC):
     @abstractmethod
     async def add_turn(self, role: str, content: str) -> None:
@@ -29,3 +36,19 @@ class MemoryStore(ABC):
     @abstractmethod
     async def clear(self) -> None:
         """Delete all stored memory. Backs the 'forget that' user command."""
+
+    @abstractmethod
+    async def add_memory(self, content: str) -> SavedMemory:
+        """Persist one fact the user explicitly asked Atlas to remember."""
+
+    @abstractmethod
+    async def list_memories(self, limit: int = 20) -> list[SavedMemory]:
+        """Return the user's saved long-term memories, oldest first."""
+
+    @abstractmethod
+    async def forget_memory(self, content: str) -> bool:
+        """Delete one exact saved memory. Return whether a row was removed."""
+
+    @abstractmethod
+    async def clear_memories(self) -> None:
+        """Delete every saved long-term memory while preserving conversation history."""
