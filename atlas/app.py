@@ -11,6 +11,7 @@ import platform
 import threading
 import tkinter as tk
 from datetime import datetime
+from pathlib import Path
 from tkinter import scrolledtext
 from typing import Protocol
 
@@ -19,6 +20,8 @@ from atlas.core.assistant.core import AssistantCore
 from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
+
+_DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 
 
 class HandlesMessage(Protocol):
@@ -77,10 +80,17 @@ class AtlasDesktopApp:
         self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
         self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
         tk.Label(field, text="09 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
-        status = tk.Frame(sidebar, bg="#101b29", highlightbackground="#24455b", highlightthickness=1)
-        status.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
-        tk.Label(status, text="●  CORE ONLINE", fg="#73e0d4", bg="#101b29", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=14, pady=(13, 3))
-        tk.Label(status, text="Ollama // local inference", fg="#9cb0c3", bg="#101b29", font=("Helvetica", 10)).pack(anchor=tk.W, padx=14, pady=(0, 13))
+        device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
+        device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
+        self._device_image: tk.PhotoImage | None
+        try:
+            self._device_image = tk.PhotoImage(file=str(_DEVICE_ASSET)).subsample(7, 7)
+        except tk.TclError:
+            self._device_image = None
+        if self._device_image is not None:
+            tk.Label(device, image=self._device_image, bg="#08111c").pack(pady=(10, 0))
+        tk.Label(device, text="MAC // LOCAL CORE", fg="#73e0d4", bg="#08111c", font=("Helvetica", 9, "bold")).pack(pady=(2, 0))
+        tk.Label(device, text="Private inference online", fg="#7890a3", bg="#08111c", font=("Helvetica", 9)).pack(pady=(2, 12))
 
         content = tk.Frame(self._root, bg="#070b12")
         content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(18, 24), pady=24)
@@ -88,7 +98,7 @@ class AtlasDesktopApp:
         header.pack(fill=tk.X)
         tk.Label(header, text="ATLAS // COMMAND SURFACE", fg="#73e0d4", bg="#101923", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=24, pady=(19, 2))
         tk.Label(header, text="What are we solving?", fg="#edf7ff", bg="#101923", font=("Helvetica", 23, "bold")).pack(anchor=tk.W, padx=24)
-        tk.Label(header, text="Natural conversation · local tools · explicit boundaries", fg="#9cb0c3", bg="#101923", font=("Helvetica", 11)).pack(anchor=tk.W, padx=24, pady=(2, 19))
+        tk.Label(header, text="Your Personal AI Assistant", fg="#9cb0c3", bg="#101923", font=("Helvetica", 11)).pack(anchor=tk.W, padx=24, pady=(2, 19))
 
         self._transcript = scrolledtext.ScrolledText(content, wrap=tk.WORD, state=tk.DISABLED, bg="#0e1620", fg="#e9edf2", insertbackground="#e9edf2", relief=tk.FLAT, padx=24, pady=20, font=("Helvetica", 12))
         self._transcript.pack(fill=tk.BOTH, expand=True, pady=(1, 0))
