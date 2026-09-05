@@ -21,6 +21,7 @@ from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.base import SavedMemory
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
+from atlas.core.tools.registry import ConfirmationCallback
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 
@@ -33,6 +34,39 @@ class HandlesMemory(HandlesMessage, Protocol):
     async def list_saved_memories(self) -> list[SavedMemory]: ...
 
     async def clear_saved_memories(self) -> None: ...
+
+
+class DesktopConfirmationBridge:
+    """Show a native approval dialog from Atlas's background request thread."""
+
+    def __init__(self, root: tk.Tk) -> None:
+        self._root = root
+
+    async def confirm(self, tool_name: str, arguments: dict[str, object]) -> bool:
+        loop = asyncio.get_running_loop()
+        decision: asyncio.Future[bool] = loop.create_future()
+
+        def ask() -> None:
+            title, detail = self._describe(tool_name, arguments)
+            approved = messagebox.askyesno(
+                "Atlas confirmation", f"Atlas wants to {title}.\n\n{detail}\n\nAllow this action?", parent=self._root
+            )
+            loop.call_soon_threadsafe(decision.set_result, approved)
+
+        self._root.after(0, ask)
+        return await decision
+
+    @staticmethod
+    def _describe(tool_name: str, arguments: dict[str, object]) -> tuple[str, str]:
+        if tool_name == "desktop.open_application":
+            return "open an application", f"Application: {arguments.get('app', '')}"
+        if tool_name == "desktop.open_file":
+            return "open a local file", f"File: {arguments.get('path', '')}"
+        if tool_name == "desktop.copy_to_clipboard":
+            text = str(arguments.get("text", ""))
+            preview = text if len(text) <= 300 else text[:297] + "..."
+            return "copy text to your clipboard", f"Text: {preview}"
+        return "perform an action", f"Tool: {tool_name}"
 
 
 class AtlasDesktopApp:
@@ -86,7 +120,7 @@ class AtlasDesktopApp:
         self._field_state_label.pack(anchor=tk.W, padx=14)
         self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
         self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
-        tk.Label(field, text="09 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
+        tk.Label(field, text="12 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
         tk.Button(sidebar, text="REVIEW MEMORIES", command=self._open_memory_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(fill=tk.X, padx=20, pady=(14, 0))
         device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
         device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
@@ -225,11 +259,13 @@ class AtlasDesktopApp:
         self._input.focus_set()
 
 
-async def _create_assistant(config: AtlasConfig) -> AssistantCore:
+async def _create_assistant(
+    config: AtlasConfig, *, confirm: ConfirmationCallback | None = None
+) -> AssistantCore:
     llm = OllamaProvider(host=config.ollama_host, model=config.llm_model, temperature=config.llm_temperature, timeout=config.llm_request_timeout_seconds)
     if not await llm.is_available():
         raise RuntimeError(f"Could not reach Ollama at {config.ollama_host}.")
-    return AssistantCore(assistant_name=config.assistant_name, llm=llm, memory=SQLiteMemoryStore(config.memory_db_path), tools=_build_tool_registry(), max_history_turns=config.memory_max_turns)
+    return AssistantCore(assistant_name=config.assistant_name, llm=llm, memory=SQLiteMemoryStore(config.memory_db_path), tools=_build_tool_registry(confirm=confirm), max_history_turns=config.memory_max_turns)
 
 
 class ConnectionScreen:
@@ -238,6 +274,7 @@ class ConnectionScreen:
     def __init__(self, root: tk.Tk, config: AtlasConfig) -> None:
         self._root = root
         self._config = config
+        self._confirmation = DesktopConfirmationBridge(root)
         self._window = tk.Toplevel(root)
         self._window.overrideredirect(True)
         self._window.configure(bg="#070b12")
@@ -286,7 +323,7 @@ class ConnectionScreen:
 
     def _connect(self) -> None:
         try:
-            assistant = asyncio.run(_create_assistant(self._config))
+            assistant = asyncio.run(_create_assistant(self._config, confirm=self._confirmation.confirm))
         except RuntimeError as exc:
             self._root.after(0, self._failed, str(exc))
             return

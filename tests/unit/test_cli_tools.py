@@ -1,7 +1,7 @@
 from atlas.cli import _build_tool_registry
 
 
-def test_cli_registers_v02_tools() -> None:
+def test_cli_registers_read_and_confirmation_gated_tools() -> None:
     registry = _build_tool_registry()
 
     assert [schema["function"]["name"] for schema in registry.list_schemas()] == [
@@ -14,4 +14,7 @@ def test_cli_registers_v02_tools() -> None:
         "system.get_battery",
         "system.get_processes",
         "system.get_network_info",
+        "desktop.open_application",
+        "desktop.open_file",
+        "desktop.copy_to_clipboard",
     ]
