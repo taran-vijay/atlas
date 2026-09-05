@@ -2,7 +2,7 @@ from typing import Any
 
 from atlas.core.assistant.core import _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import MemoryStore, MemoryTurn
+from atlas.core.memory.base import MemoryStore, MemoryTurn, SavedMemory
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
 from atlas.core.tools.registry import ToolRegistry
 from atlas.core.tools.system_tools import GetProcessesTool
@@ -24,6 +24,7 @@ class _StubLLM(LLMProvider):
 class _InMemoryStore(MemoryStore):
     def __init__(self) -> None:
         self._turns: list[MemoryTurn] = []
+        self._memories: list[SavedMemory] = []
 
     async def add_turn(self, role: str, content: str) -> None:
         self._turns.append(MemoryTurn(role=role, content=content, timestamp=0.0))
@@ -33,6 +34,27 @@ class _InMemoryStore(MemoryStore):
 
     async def clear(self) -> None:
         self._turns.clear()
+
+    async def add_memory(self, content: str) -> SavedMemory:
+        for memory in self._memories:
+            if memory.content == content.strip():
+                return memory
+        memory = SavedMemory(id=len(self._memories) + 1, content=content.strip(), created_at=0.0)
+        self._memories.append(memory)
+        return memory
+
+    async def list_memories(self, limit: int = 20) -> list[SavedMemory]:
+        return self._memories[:limit]
+
+    async def forget_memory(self, content: str) -> bool:
+        for memory in self._memories:
+            if memory.content == content.strip():
+                self._memories.remove(memory)
+                return True
+        return False
+
+    async def clear_memories(self) -> None:
+        self._memories.clear()
 
 
 class _ScriptedLLM(LLMProvider):
@@ -85,6 +107,45 @@ async def test_handle_message_returns_llm_reply_and_persists_turns() -> None:
 
     history = await memory.recent_turns(10)
     assert [t.role for t in history] == ["user", "assistant"]
+
+
+async def test_explicit_memory_is_saved_and_injected_into_future_context() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([LLMResponse(content="Nice to meet you, Taran.")])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    saved = await core.handle_message("Remember that my name is Taran")
+    reply = await core.handle_message("What is my name?")
+
+    assert saved == "I’ll remember: my name is Taran"
+    assert reply == "Nice to meet you, Taran."
+    assert "my name is Taran" in llm.messages[0][1].content
+
+
+async def test_memory_can_be_listed_and_forgotten_without_model_calls() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    await core.handle_message("Remember that I prefer concise answers")
+    listed = await core.handle_message("What do you remember about me?")
+    forgotten = await core.handle_message("Forget that I prefer concise answers")
+
+    assert "I prefer concise answers" in listed
+    assert forgotten == "I’ve forgotten: I prefer concise answers"
+    assert await core.list_saved_memories() == []
+    assert llm.messages == []
+
+
+async def test_sensitive_memory_is_refused() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Remember my password is swordfish")
+
+    assert "won’t save sensitive credentials" in reply
+    assert await core.list_saved_memories() == []
 
 
 async def test_casual_message_does_not_offer_system_tools() -> None:

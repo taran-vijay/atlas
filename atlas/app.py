@@ -12,13 +12,14 @@ import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import scrolledtext
+from tkinter import messagebox, scrolledtext
 from typing import Protocol
 
 from atlas.cli import _build_tool_registry, _configure_logging
 from atlas.core.assistant.core import AssistantCore
 from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
+from atlas.core.memory.base import SavedMemory
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
@@ -28,8 +29,14 @@ class HandlesMessage(Protocol):
     async def handle_message(self, user_input: str) -> str: ...
 
 
+class HandlesMemory(HandlesMessage, Protocol):
+    async def list_saved_memories(self) -> list[SavedMemory]: ...
+
+    async def clear_saved_memories(self) -> None: ...
+
+
 class AtlasDesktopApp:
-    def __init__(self, root: tk.Tk, assistant: HandlesMessage, name: str) -> None:
+    def __init__(self, root: tk.Tk, assistant: HandlesMemory, name: str) -> None:
         self._root = root
         self._assistant = assistant
         self._name = name
@@ -80,6 +87,7 @@ class AtlasDesktopApp:
         self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
         self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
         tk.Label(field, text="09 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
+        tk.Button(sidebar, text="REVIEW MEMORIES", command=self._open_memory_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(fill=tk.X, padx=20, pady=(14, 0))
         device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
         device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
         self._device_image: tk.PhotoImage | None
@@ -122,6 +130,40 @@ class AtlasDesktopApp:
         now = datetime.now().astimezone().strftime("LOCAL TIME  %H:%M:%S  %Z")
         self._field_clock.configure(text=now)
         self._root.after(1_000, self._refresh_field)
+
+    def _open_memory_window(self) -> None:
+        window = tk.Toplevel(self._root)
+        window.title("Atlas // Saved Memories")
+        window.geometry("520x410")
+        window.configure(bg="#0b121c")
+        tk.Label(window, text="SAVED MEMORIES", fg="#73e0d4", bg="#0b121c", font=("Helvetica", 16, "bold")).pack(anchor=tk.W, padx=22, pady=(22, 2))
+        tk.Label(window, text="Only facts you explicitly asked Atlas to remember are listed here.", fg="#91a6b8", bg="#0b121c", font=("Helvetica", 10)).pack(anchor=tk.W, padx=22, pady=(0, 15))
+        contents = scrolledtext.ScrolledText(window, wrap=tk.WORD, state=tk.DISABLED, bg="#101a26", fg="#e8f4fb", relief=tk.FLAT, padx=14, pady=12, font=("Helvetica", 11))
+        contents.pack(fill=tk.BOTH, expand=True, padx=22)
+
+        def refresh() -> None:
+            threading.Thread(target=load, daemon=True).start()
+
+        def load() -> None:
+            memories = asyncio.run(self._assistant.list_saved_memories())
+            self._root.after(0, render, memories)
+
+        def render(memories: list[SavedMemory]) -> None:
+            contents.configure(state=tk.NORMAL)
+            contents.delete("1.0", tk.END)
+            contents.insert(tk.END, "\n".join(f"• {memory.content}" for memory in memories) or "No saved memories yet.")
+            contents.configure(state=tk.DISABLED)
+
+        def clear_all() -> None:
+            if messagebox.askyesno("Clear saved memories", "Remove all saved memories? This cannot be undone.", parent=window):
+                threading.Thread(target=clear, daemon=True).start()
+
+        def clear() -> None:
+            asyncio.run(self._assistant.clear_saved_memories())
+            self._root.after(0, refresh)
+
+        tk.Button(window, text="CLEAR ALL MEMORIES", command=clear_all, bg="#3d2028", fg="#ffb5bc", activebackground="#642b36", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(anchor=tk.E, padx=22, pady=18)
+        refresh()
 
     def _set_field_state(self, state: str) -> None:
         self._field_state = state

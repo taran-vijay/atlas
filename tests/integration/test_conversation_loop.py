@@ -33,11 +33,12 @@ async def test_multi_turn_conversation(tmp_path: Any) -> None:
     second = await core.handle_message("remember that I like tea")
 
     assert first == "Hi! How can I help?"
-    assert second == "Sure, noted."
+    assert second == "I’ll remember: I like tea"
 
     history = await memory.recent_turns(10)
     assert len(history) == 4
     assert [t.role for t in history] == ["user", "assistant", "user", "assistant"]
+    assert [memory.content for memory in await memory.list_memories()] == ["I like tea"]
 
 
 async def test_forget_clears_memory(tmp_path: Any) -> None:
