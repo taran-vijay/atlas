@@ -38,6 +38,6 @@ async def test_sqlite_store_persists_voice_settings(tmp_path: Path) -> None:
     store = SQLiteMemoryStore(tmp_path / "memory.db")
     assert await store.get_voice_settings() == VoiceSettings()
 
-    await store.save_voice_settings(VoiceSettings(enabled=False, voice="female"))
+    await store.save_voice_settings(VoiceSettings(enabled=False, voice="female_samantha"))
 
-    assert await store.get_voice_settings() == VoiceSettings(enabled=False, voice="female")
+    assert await store.get_voice_settings() == VoiceSettings(enabled=False, voice="female_samantha")

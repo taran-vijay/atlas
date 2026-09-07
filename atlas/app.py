@@ -12,7 +12,7 @@ import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, ttk
 from typing import Protocol
 
 from atlas.cli import _build_tool_registry, _configure_logging
@@ -22,7 +22,7 @@ from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.base import ActionRecord, SavedMemory, VoiceSettings
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
-from atlas.core.voice.macos_speaker import MacOSSpeaker
+from atlas.core.voice.macos_speaker import VOICE_OPTIONS, MacOSSpeaker, _speech_text
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 
@@ -110,6 +110,7 @@ class AtlasDesktopApp:
         self._name = name
         self._voice_settings = voice_settings
         self._speaker = MacOSSpeaker()
+        self._spoken_rendered = ""
         self._busy = False
         self._field_state = "READY"
         self._thinking = False
@@ -278,18 +279,20 @@ class AtlasDesktopApp:
     def _open_settings_window(self) -> None:
         window = tk.Toplevel(self._root)
         window.title("Atlas // Settings")
-        window.geometry("470x360")
+        window.geometry("540x440")
         window.configure(bg="#0b121c")
-        tk.Label(window, text="SETTINGS", fg="#73e0d4", bg="#0b121c", font=("Helvetica", 16, "bold")).pack(anchor=tk.W, padx=22, pady=(22, 2))
-        tk.Label(window, text="Voice responses are generated entirely by macOS on this device.", fg="#91a6b8", bg="#0b121c", font=("Helvetica", 10)).pack(anchor=tk.W, padx=22, pady=(0, 22))
+        tk.Label(window, text="⚙  SETTINGS", fg="#73e0d4", bg="#0b121c", font=("Helvetica", 16, "bold")).pack(anchor=tk.W, padx=22, pady=(22, 2))
+        tk.Label(window, text="Configure how Atlas sounds and responds on this Mac.", fg="#91a6b8", bg="#0b121c", font=("Helvetica", 10)).pack(anchor=tk.W, padx=22, pady=(0, 14))
+        tabs = ttk.Notebook(window)
+        tabs.pack(fill=tk.BOTH, expand=True, padx=22)
+        voice_tab = tk.Frame(tabs, bg="#101a26")
+        tabs.add(voice_tab, text="  ◉  VOICE  ")
         voice_enabled = tk.BooleanVar(value=self._voice_settings.enabled)
         voice_type = tk.StringVar(value=self._voice_settings.voice)
-        settings = tk.Frame(window, bg="#101a26", highlightbackground="#24455b", highlightthickness=1)
-        settings.pack(fill=tk.X, padx=22)
-        tk.Checkbutton(settings, text="READ ATLAS RESPONSES ALOUD", variable=voice_enabled, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=16, pady=(16, 10))
-        tk.Label(settings, text="VOICE PROFILE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16)
-        tk.Radiobutton(settings, text="ADULT MALE  ·  deeper, measured", variable=voice_type, value="male", bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=(7, 2))
-        tk.Radiobutton(settings, text="ADULT FEMALE  ·  clear, expressive", variable=voice_type, value="female", bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=(2, 16))
+        tk.Checkbutton(voice_tab, text="READ ATLAS RESPONSES ALOUD", variable=voice_enabled, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=16, pady=(16, 10))
+        tk.Label(voice_tab, text="VOICE PROFILE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16)
+        for voice_id, (name, description, _, _) in VOICE_OPTIONS.items():
+            tk.Radiobutton(voice_tab, text=f"{name}  ·  {description}", variable=voice_type, value=voice_id, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=2)
 
         def selected_settings() -> VoiceSettings:
             return VoiceSettings(enabled=voice_enabled.get(), voice=voice_type.get())
@@ -368,15 +371,44 @@ class AtlasDesktopApp:
         self._root.after(0, self._finish_reply, reply)
 
     def _finish_reply(self, reply: str) -> None:
-        self._append(self._name, reply)
-        threading.Thread(target=self._speak_reply, args=(reply,), daemon=True).start()
+        if self._voice_settings.enabled:
+            spoken_reply = _speech_text(reply)
+            self._begin_spoken_reply()
+            threading.Thread(target=self._speak_reply, args=(spoken_reply,), daemon=True).start()
+        else:
+            self._append(self._name, reply)
         self._busy = False
         self._set_field_state("READY")
         self._send_button.configure(state=tk.NORMAL, text="Send")
         self._input.focus_set()
 
+    def _begin_spoken_reply(self) -> None:
+        self._spoken_rendered = ""
+        self._transcript.configure(state=tk.NORMAL)
+        self._transcript.insert(tk.END, f"{self._name.upper()}\n", "atlas")
+        self._transcript.configure(state=tk.DISABLED)
+        self._transcript.see(tk.END)
+
+    def _append_spoken_fragment(self, fragment: str) -> None:
+        self._spoken_rendered += fragment
+        self._transcript.configure(state=tk.NORMAL)
+        self._transcript.insert(tk.END, fragment)
+        self._transcript.configure(state=tk.DISABLED)
+        self._transcript.see(tk.END)
+
+    def _complete_spoken_reply(self, reply: str) -> None:
+        remaining = reply[len(self._spoken_rendered):]
+        self._transcript.configure(state=tk.NORMAL)
+        self._transcript.insert(tk.END, remaining + "\n\n")
+        self._transcript.configure(state=tk.DISABLED)
+        self._transcript.see(tk.END)
+
     def _speak_reply(self, reply: str) -> None:
-        asyncio.run(self._speaker.speak(reply, self._voice_settings))
+        def progress(fragment: str) -> None:
+            self._root.after(0, self._append_spoken_fragment, fragment)
+
+        asyncio.run(self._speaker.speak(reply, self._voice_settings, progress))
+        self._root.after(0, self._complete_spoken_reply, reply)
 
 
 async def _create_assistant(

@@ -39,7 +39,7 @@ class ActionRecord:
 @dataclass(frozen=True)
 class VoiceSettings:
     enabled: bool = True
-    voice: str = "male"
+    voice: str = "male_alex"
 
 
 class MemoryStore(ABC):
