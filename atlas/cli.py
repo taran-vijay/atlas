@@ -9,7 +9,13 @@ from atlas.core.assistant.core import AssistantCore
 from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
-from atlas.core.tools.action_tools import CopyToClipboardTool, OpenApplicationTool, OpenFileTool
+from atlas.core.tools.action_tools import (
+    CopyToClipboardTool,
+    CreateTextFileTool,
+    MoveFileTool,
+    OpenApplicationTool,
+    OpenFileTool,
+)
 from atlas.core.tools.registry import ConfirmationCallback, ToolRegistry
 from atlas.core.tools.system_tools import (
     GetBatteryTool,
@@ -50,6 +56,8 @@ def _build_tool_registry(*, confirm: ConfirmationCallback | None = None) -> Tool
     tools.register(OpenApplicationTool())
     tools.register(OpenFileTool())
     tools.register(CopyToClipboardTool())
+    tools.register(CreateTextFileTool())
+    tools.register(MoveFileTool())
     return tools
 
 
