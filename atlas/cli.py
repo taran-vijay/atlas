@@ -13,8 +13,10 @@ from atlas.core.tools.action_tools import (
     CopyToClipboardTool,
     CreateTextFileTool,
     MoveFileTool,
+    MoveToTrashTool,
     OpenApplicationTool,
     OpenFileTool,
+    RenameFileTool,
 )
 from atlas.core.tools.registry import ConfirmationCallback, ToolRegistry
 from atlas.core.tools.system_tools import (
@@ -58,6 +60,8 @@ def _build_tool_registry(*, confirm: ConfirmationCallback | None = None) -> Tool
     tools.register(CopyToClipboardTool())
     tools.register(CreateTextFileTool())
     tools.register(MoveFileTool())
+    tools.register(RenameFileTool())
+    tools.register(MoveToTrashTool())
     return tools
 
 

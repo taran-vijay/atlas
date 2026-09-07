@@ -73,6 +73,9 @@ _TOOL_REQUEST_TERMS = (
     "create a file",
     "save a note",
     "move ",
+    "rename ",
+    "trash",
+    "delete file",
 )
 
 _UNAVAILABLE_INTEGRATION_TERMS = {

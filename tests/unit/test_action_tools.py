@@ -7,8 +7,10 @@ from atlas.core.tools.action_tools import (
     CopyToClipboardTool,
     CreateTextFileTool,
     MoveFileTool,
+    MoveToTrashTool,
     OpenApplicationTool,
     OpenFileTool,
+    RenameFileTool,
 )
 from atlas.core.tools.registry import ToolRegistry
 
@@ -153,3 +155,66 @@ async def test_move_file_never_replaces_existing_destination(tmp_path: Path) -> 
     assert "already exists" in (result.error or "")
     assert source.read_text(encoding="utf-8") == "source"
     assert destination.read_text(encoding="utf-8") == "original destination"
+
+
+async def test_rename_file_renames_in_place_without_replacing(tmp_path: Path) -> None:
+    source = tmp_path / "draft.txt"
+    source.write_text("Atlas draft", encoding="utf-8")
+
+    result = await RenameFileTool().execute({"path": str(source), "new_name": "final.txt"})
+
+    destination = tmp_path / "final.txt"
+    assert result.success is True
+    assert source.exists() is False
+    assert destination.read_text(encoding="utf-8") == "Atlas draft"
+
+
+def test_rename_file_rejects_a_path_as_the_new_name() -> None:
+    with pytest.raises(ValueError):
+        RenameFileTool().validate_arguments({"path": "/tmp/draft.txt", "new_name": "folder/new.txt"})
+
+
+async def test_rename_file_never_replaces_existing_file(tmp_path: Path) -> None:
+    source = tmp_path / "draft.txt"
+    destination = tmp_path / "final.txt"
+    source.write_text("draft", encoding="utf-8")
+    destination.write_text("original", encoding="utf-8")
+
+    result = await RenameFileTool().execute({"path": str(source), "new_name": "final.txt"})
+
+    assert result.success is False
+    assert "already exists" in (result.error or "")
+    assert source.read_text(encoding="utf-8") == "draft"
+    assert destination.read_text(encoding="utf-8") == "original"
+
+
+async def test_move_to_trash_uses_finder_with_path_as_separate_argument(tmp_path: Path) -> None:
+    path = tmp_path / 'a "quoted" file.txt'
+    path.write_text("discard", encoding="utf-8")
+    process = _Process()
+    with (
+        patch("atlas.core.tools.action_tools.platform.system", return_value="Darwin"),
+        patch(
+            "atlas.core.tools.action_tools.asyncio.create_subprocess_exec", return_value=process
+        ) as spawn,
+    ):
+        result = await MoveToTrashTool().execute({"path": str(path)})
+
+    assert result.success is True
+    assert result.data == {"path": str(path.resolve())}
+    call = spawn.await_args
+    assert call is not None
+    assert call.args[:2] == ("osascript", "-e")
+    assert call.args[-2:] == ("--", str(path.resolve()))
+
+
+async def test_move_to_trash_rejects_directories_and_does_not_run_finder(tmp_path: Path) -> None:
+    with (
+        patch("atlas.core.tools.action_tools.platform.system", return_value="Darwin"),
+        patch("atlas.core.tools.action_tools.asyncio.create_subprocess_exec") as spawn,
+    ):
+        result = await MoveToTrashTool().execute({"path": str(tmp_path)})
+
+    assert result.success is False
+    assert "regular file" in (result.error or "")
+    spawn.assert_not_called()
