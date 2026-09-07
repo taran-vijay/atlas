@@ -36,6 +36,12 @@ class ActionRecord:
     timestamp: float
 
 
+@dataclass(frozen=True)
+class VoiceSettings:
+    enabled: bool = True
+    voice: str = "male"
+
+
 class MemoryStore(ABC):
     @abstractmethod
     async def add_turn(self, role: str, content: str) -> None:
@@ -78,3 +84,11 @@ class MemoryStore(ABC):
     @abstractmethod
     async def clear_actions(self) -> None:
         """Delete action history without changing conversation or saved memories."""
+
+    @abstractmethod
+    async def get_voice_settings(self) -> VoiceSettings:
+        """Return the user's local speech preferences."""
+
+    @abstractmethod
+    async def save_voice_settings(self, settings: VoiceSettings) -> None:
+        """Persist the user's local speech preferences."""

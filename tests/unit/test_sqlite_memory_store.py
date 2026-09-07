@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from atlas.core.memory.base import VoiceSettings
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.base import ToolResult
 
@@ -31,3 +32,12 @@ async def test_sqlite_store_records_actions_without_clipboard_contents(tmp_path:
     assert actions[0].summary == "Copy to clipboard: 23 characters"
     await store.clear_actions()
     assert await store.recent_actions() == []
+
+
+async def test_sqlite_store_persists_voice_settings(tmp_path: Path) -> None:
+    store = SQLiteMemoryStore(tmp_path / "memory.db")
+    assert await store.get_voice_settings() == VoiceSettings()
+
+    await store.save_voice_settings(VoiceSettings(enabled=False, voice="female"))
+
+    assert await store.get_voice_settings() == VoiceSettings(enabled=False, voice="female")

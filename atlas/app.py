@@ -19,9 +19,10 @@ from atlas.cli import _build_tool_registry, _configure_logging
 from atlas.core.assistant.core import AssistantCore
 from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
-from atlas.core.memory.base import ActionRecord, SavedMemory
+from atlas.core.memory.base import ActionRecord, SavedMemory, VoiceSettings
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
+from atlas.core.voice.macos_speaker import MacOSSpeaker
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 
@@ -38,6 +39,10 @@ class HandlesMemory(HandlesMessage, Protocol):
     async def list_recent_actions(self) -> list[ActionRecord]: ...
 
     async def clear_action_history(self) -> None: ...
+
+    async def get_voice_settings(self) -> VoiceSettings: ...
+
+    async def save_voice_settings(self, settings: VoiceSettings) -> None: ...
 
 
 class DesktopConfirmationBridge:
@@ -97,10 +102,14 @@ class DesktopConfirmationBridge:
 
 
 class AtlasDesktopApp:
-    def __init__(self, root: tk.Tk, assistant: HandlesMemory, name: str) -> None:
+    def __init__(
+        self, root: tk.Tk, assistant: HandlesMemory, name: str, voice_settings: VoiceSettings
+    ) -> None:
         self._root = root
         self._assistant = assistant
         self._name = name
+        self._voice_settings = voice_settings
+        self._speaker = MacOSSpeaker()
         self._busy = False
         self._field_state = "READY"
         self._thinking = False
@@ -150,6 +159,7 @@ class AtlasDesktopApp:
         tk.Label(field, text="18 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
         tk.Button(sidebar, text="REVIEW MEMORIES", command=self._open_memory_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(fill=tk.X, padx=20, pady=(14, 0))
         tk.Button(sidebar, text="ACTION HISTORY", command=self._open_action_history, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=8).pack(fill=tk.X, padx=20, pady=(8, 0))
+        tk.Button(sidebar, text="SETTINGS", command=self._open_settings_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=8).pack(fill=tk.X, padx=20, pady=(8, 0))
         device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
         device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
         self._device_image: tk.PhotoImage | None
@@ -265,6 +275,46 @@ class AtlasDesktopApp:
         tk.Button(window, text="CLEAR ACTION HISTORY", command=clear_all, bg="#3d2028", fg="#ffb5bc", activebackground="#642b36", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(anchor=tk.E, padx=22, pady=18)
         refresh()
 
+    def _open_settings_window(self) -> None:
+        window = tk.Toplevel(self._root)
+        window.title("Atlas // Settings")
+        window.geometry("470x360")
+        window.configure(bg="#0b121c")
+        tk.Label(window, text="SETTINGS", fg="#73e0d4", bg="#0b121c", font=("Helvetica", 16, "bold")).pack(anchor=tk.W, padx=22, pady=(22, 2))
+        tk.Label(window, text="Voice responses are generated entirely by macOS on this device.", fg="#91a6b8", bg="#0b121c", font=("Helvetica", 10)).pack(anchor=tk.W, padx=22, pady=(0, 22))
+        voice_enabled = tk.BooleanVar(value=self._voice_settings.enabled)
+        voice_type = tk.StringVar(value=self._voice_settings.voice)
+        settings = tk.Frame(window, bg="#101a26", highlightbackground="#24455b", highlightthickness=1)
+        settings.pack(fill=tk.X, padx=22)
+        tk.Checkbutton(settings, text="READ ATLAS RESPONSES ALOUD", variable=voice_enabled, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=16, pady=(16, 10))
+        tk.Label(settings, text="VOICE PROFILE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16)
+        tk.Radiobutton(settings, text="ADULT MALE  ·  deeper, measured", variable=voice_type, value="male", bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=(7, 2))
+        tk.Radiobutton(settings, text="ADULT FEMALE  ·  clear, expressive", variable=voice_type, value="female", bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=(2, 16))
+
+        def selected_settings() -> VoiceSettings:
+            return VoiceSettings(enabled=voice_enabled.get(), voice=voice_type.get())
+
+        def test_voice() -> None:
+            threading.Thread(
+                target=lambda: asyncio.run(
+                    self._speaker.speak("Voice interface online. How can I help?", selected_settings())
+                ),
+                daemon=True,
+            ).start()
+
+        def save() -> None:
+            selected = selected_settings()
+            self._voice_settings = selected
+            threading.Thread(
+                target=lambda: asyncio.run(self._assistant.save_voice_settings(selected)), daemon=True
+            ).start()
+            window.destroy()
+
+        buttons = tk.Frame(window, bg="#0b121c")
+        buttons.pack(fill=tk.X, padx=22, pady=22)
+        tk.Button(buttons, text="TEST VOICE", command=test_voice, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(side=tk.LEFT)
+        tk.Button(buttons, text="SAVE SETTINGS", command=save, bg="#73e0d4", fg="#061210", activebackground="#a4fff6", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(side=tk.RIGHT)
+
     def _set_field_state(self, state: str) -> None:
         self._field_state = state
         colors = {"READY": "#f6c35c", "PROCESSING": "#73e0d4"}
@@ -319,10 +369,14 @@ class AtlasDesktopApp:
 
     def _finish_reply(self, reply: str) -> None:
         self._append(self._name, reply)
+        threading.Thread(target=self._speak_reply, args=(reply,), daemon=True).start()
         self._busy = False
         self._set_field_state("READY")
         self._send_button.configure(state=tk.NORMAL, text="Send")
         self._input.focus_set()
+
+    def _speak_reply(self, reply: str) -> None:
+        asyncio.run(self._speaker.speak(reply, self._voice_settings))
 
 
 async def _create_assistant(
@@ -391,25 +445,26 @@ class ConnectionScreen:
     def _connect(self) -> None:
         try:
             assistant = asyncio.run(_create_assistant(self._config, confirm=self._confirmation.confirm))
+            voice_settings = asyncio.run(assistant.get_voice_settings())
         except RuntimeError as exc:
             self._root.after(0, self._failed, str(exc))
             return
-        self._root.after(0, self._ready, assistant)
+        self._root.after(0, self._ready, assistant, voice_settings)
 
-    def _ready(self, assistant: AssistantCore) -> None:
+    def _ready(self, assistant: AssistantCore, voice_settings: VoiceSettings) -> None:
         self._status.configure(text="Local core verified", fg="#73e0d4")
         self._detail.configure(text="Ollama is online · launching command surface")
-        self._window.after(650, lambda: self._launch(assistant))
+        self._window.after(650, lambda: self._launch(assistant, voice_settings))
 
     def _failed(self, error: str) -> None:
         self._status.configure(text="Connection unavailable", fg="#f6c35c")
         self._detail.configure(text=error)
         self._retry.pack(pady=(16, 0))
 
-    def _launch(self, assistant: AssistantCore) -> None:
+    def _launch(self, assistant: AssistantCore, voice_settings: VoiceSettings) -> None:
         self._window.destroy()
         self._root.deiconify()
-        AtlasDesktopApp(self._root, assistant, self._config.assistant_name)
+        AtlasDesktopApp(self._root, assistant, self._config.assistant_name, voice_settings)
 
 
 def main() -> None:
