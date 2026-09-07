@@ -171,6 +171,10 @@ class CreateTextFileTool(Tool):
             data={"path": str(resolved), "characters": len(arguments["text"])},
         )
 
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        path = Path(arguments["path"]).expanduser()
+        return await asyncio.to_thread(_text_file_matches, path, arguments["text"])
+
 
 class CreateFolderTool(Tool):
     """Create one new folder without creating parents or overwriting data."""
@@ -209,6 +213,9 @@ class CreateFolderTool(Tool):
         except OSError:
             return ToolResult(False, "", error="Could not create the folder safely.")
         return ToolResult(True, "Created the folder.", data={"path": str(resolved)})
+
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        return Path(arguments["path"]).expanduser().is_dir()
 
 
 class CopyFileTool(Tool):
@@ -260,6 +267,13 @@ class CopyFileTool(Tool):
             True,
             "Copied the file.",
             data={"source": str(resolved_source), "destination": str(resolved_destination)},
+        )
+
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        return await asyncio.to_thread(
+            _files_have_same_size,
+            Path(arguments["source"]).expanduser(),
+            Path(arguments["destination"]).expanduser(),
         )
 
 
@@ -314,6 +328,11 @@ class MoveFileTool(Tool):
             data={"source": str(resolved_source), "destination": str(resolved_destination)},
         )
 
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        source = Path(arguments["source"]).expanduser()
+        destination = Path(arguments["destination"]).expanduser()
+        return not source.exists() and destination.is_file()
+
 
 class RenameFileTool(Tool):
     """Rename one regular file in place without replacing another file."""
@@ -367,6 +386,10 @@ class RenameFileTool(Tool):
             "Renamed the file.",
             data={"source": str(resolved_source), "destination": str(resolved_destination)},
         )
+
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        source = Path(arguments["path"]).expanduser()
+        return not source.exists() and source.with_name(arguments["new_name"]).is_file()
 
 
 class MoveToTrashTool(Tool):
@@ -428,6 +451,9 @@ class MoveToTrashTool(Tool):
             )
         return ToolResult(True, "Moved the file to Trash.", data={"path": str(resolved)})
 
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        return not Path(arguments["path"]).expanduser().exists()
+
 
 async def _run_open(command: list[str], failure: str, data: dict[str, str]) -> ToolResult:
     process = await asyncio.create_subprocess_exec(
@@ -447,6 +473,20 @@ def _create_new_text_file(path: Path, text: str) -> Path:
         file.flush()
         os.fsync(file.fileno())
     return path.resolve()
+
+
+def _text_file_matches(path: Path, expected: str) -> bool:
+    try:
+        return path.is_file() and path.read_text(encoding="utf-8") == expected
+    except OSError:
+        return False
+
+
+def _files_have_same_size(source: Path, destination: Path) -> bool:
+    try:
+        return source.is_file() and destination.is_file() and source.stat().st_size == destination.stat().st_size
+    except OSError:
+        return False
 
 
 def _create_new_folder(path: Path) -> Path:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
@@ -73,6 +74,21 @@ class ToolRegistry:
             )
 
         try:
+            preflight_error = await tool.preflight(arguments)
+        except Exception:  # noqa: BLE001 - a tool boundary must contain implementation failures.
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"'{tool.name}' could not check whether it can run safely.",
+            )
+        if preflight_error is not None:
+            return await self._finalize(
+                tool,
+                arguments,
+                ToolResult(success=False, content="", error=preflight_error, verification="not_run"),
+            )
+
+        try:
             if tool.permission in (PermissionLevel.CONFIRM, PermissionLevel.PRIVILEGED):
                 if self._confirm is None:
                     raise PermissionDeniedError(
@@ -88,7 +104,8 @@ class ToolRegistry:
                         success=False, content="", error="User declined confirmation"
                         ),
                     )
-            return await self._finalize(tool, arguments, await tool.execute(arguments))
+            result = await self._execute_with_safe_retry(tool, arguments)
+            return await self._finalize(tool, arguments, result)
         except PermissionDeniedError as exc:
             return await self._finalize(
                 tool, arguments, ToolResult(success=False, content="", error=str(exc))
@@ -113,6 +130,38 @@ class ToolRegistry:
             except Exception:  # recording must not change an action outcome.
                 _LOGGER.exception("action_audit_failed tool=%s", tool.name)
         return result
+
+    async def _execute_with_safe_retry(self, tool: Tool, arguments: dict[str, Any]) -> ToolResult:
+        """Retry only read-only failures; mutations are never repeated automatically."""
+        attempts = 2 if tool.permission == PermissionLevel.READ_ONLY else 1
+        result: ToolResult | None = None
+        for attempt in range(1, attempts + 1):
+            result = await tool.execute(arguments)
+            if result.success or attempt == attempts:
+                break
+        assert result is not None
+        result = replace(result, attempts=attempt)
+        if not result.success:
+            return replace(result, verification="not_run")
+        try:
+            verified = await tool.verify(arguments, result)
+        except Exception:  # noqa: BLE001 - verification failure must contain a tool boundary.
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"'{tool.name}' completed but Atlas could not verify the outcome.",
+                attempts=attempt,
+                verification="failed",
+            )
+        if verified is False:
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"'{tool.name}' did not produce the expected result.",
+                attempts=attempt,
+                verification="failed",
+            )
+        return replace(result, verification="verified" if verified else "not_applicable")
 
     @staticmethod
     def _normalize_arguments(tool: Tool, arguments: dict[str, Any]) -> dict[str, Any]:

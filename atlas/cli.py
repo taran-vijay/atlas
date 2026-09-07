@@ -80,6 +80,9 @@ async def _run(config: AtlasConfig) -> None:
         model=config.llm_model,
         temperature=config.llm_temperature,
         timeout=config.llm_request_timeout_seconds,
+        context_tokens=config.llm_context_tokens,
+        max_response_tokens=config.llm_max_response_tokens,
+        keep_alive=config.llm_keep_alive,
     )
     if not await llm.is_available():
         print(
@@ -97,6 +100,7 @@ async def _run(config: AtlasConfig) -> None:
         memory=memory,
         tools=tools,
         max_history_turns=config.memory_max_turns,
+        max_history_characters=config.memory_max_context_characters,
     )
 
     print(f"{config.assistant_name} is ready. Type 'exit' to quit.")

@@ -9,6 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,10 +40,14 @@ class AtlasConfig(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     llm_temperature: float = 0.4
     llm_request_timeout_seconds: float = 60.0
+    llm_context_tokens: int = Field(default=4096, ge=1024, le=32768)
+    llm_max_response_tokens: int = Field(default=512, ge=64, le=4096)
+    llm_keep_alive: str = "5m"
 
     # Memory
     memory_db_path: Path = Path.home() / ".atlas" / "memory.db"
     memory_max_turns: int = 20
+    memory_max_context_characters: int = Field(default=12_000, ge=1_000, le=100_000)
 
     # Logging / audit
     log_level: LogLevel = LogLevel.INFO

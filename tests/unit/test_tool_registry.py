@@ -48,6 +48,28 @@ class _IntegerTool(Tool):
         return ToolResult(success=True, content=str(arguments["limit"]))
 
 
+class _FlakyReadTool(_EchoTool):
+    def __init__(self) -> None:
+        super().__init__()
+        self._calls = 0
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        self._calls += 1
+        if self._calls == 1:
+            return ToolResult(success=False, content="", error="Temporary read failure")
+        return ToolResult(success=True, content=arguments["text"])
+
+
+class _UnverifiedActionTool(_DeleteTool):
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool:
+        return False
+
+
+class _UnavailableActionTool(_DeleteTool):
+    async def preflight(self, arguments: dict[str, Any]) -> str | None:
+        return "This capability is currently unavailable."
+
+
 async def test_read_only_tool_runs_without_confirmation() -> None:
     registry = ToolRegistry()
     registry.register(_EchoTool())
@@ -70,6 +92,49 @@ async def test_schema_integer_string_is_normalized_before_validation() -> None:
     result = await registry.dispatch("integer", {"limit": "5"})
     assert result.success is True
     assert result.content == "5"
+
+
+async def test_read_only_tool_retries_one_transient_failure() -> None:
+    registry = ToolRegistry()
+    registry.register(_FlakyReadTool())
+
+    result = await registry.dispatch("echo", {"text": "recovered"})
+
+    assert result.success is True
+    assert result.content == "recovered"
+    assert result.attempts == 2
+
+
+async def test_action_reports_failed_verification_without_retrying_it() -> None:
+    async def allow(name: str, args: dict[str, Any]) -> bool:
+        return True
+
+    registry = ToolRegistry(confirm=allow)
+    registry.register(_UnverifiedActionTool())
+
+    result = await registry.dispatch("delete_everything", {"text": "x"})
+
+    assert result.success is False
+    assert result.verification == "failed"
+    assert "expected result" in (result.error or "")
+
+
+async def test_preflight_blocks_unavailable_action_before_confirmation() -> None:
+    confirmed = False
+
+    async def allow(name: str, args: dict[str, Any]) -> bool:
+        nonlocal confirmed
+        confirmed = True
+        return True
+
+    registry = ToolRegistry(confirm=allow)
+    registry.register(_UnavailableActionTool())
+
+    result = await registry.dispatch("delete_everything", {"text": "x"})
+
+    assert result.success is False
+    assert result.error == "This capability is currently unavailable."
+    assert confirmed is False
 
 
 async def test_non_numeric_integer_string_remains_a_tool_error() -> None:
