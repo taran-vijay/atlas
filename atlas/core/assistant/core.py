@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory
+from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory, VoiceSettings
 from atlas.core.tools.base import ToolResult
 from atlas.core.tools.registry import ToolRegistry
 
@@ -251,6 +251,14 @@ class AssistantCore:
     async def clear_action_history(self) -> None:
         """Clear action history without affecting saved memory or conversation."""
         await self._memory.clear_actions()
+
+    async def get_voice_settings(self) -> VoiceSettings:
+        """Expose local voice preferences to the desktop interface."""
+        return await self._memory.get_voice_settings()
+
+    async def save_voice_settings(self, settings: VoiceSettings) -> None:
+        """Persist desktop voice preferences locally."""
+        await self._memory.save_voice_settings(settings)
 
     async def _handle_memory_command(self, user_input: str) -> str | None:
         normalized = user_input.strip()

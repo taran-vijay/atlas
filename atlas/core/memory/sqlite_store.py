@@ -13,7 +13,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory
+from atlas.core.memory.base import (
+    ActionRecord,
+    MemoryStore,
+    MemoryTurn,
+    SavedMemory,
+    VoiceSettings,
+)
 from atlas.core.tools.base import ToolResult
 
 _SCHEMA = """
@@ -36,6 +42,12 @@ CREATE TABLE IF NOT EXISTS actions (
     summary TEXT NOT NULL,
     outcome TEXT NOT NULL,
     timestamp REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS voice_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled INTEGER NOT NULL,
+    voice TEXT NOT NULL
 );
 """
 
@@ -120,6 +132,23 @@ class SQLiteMemoryStore(MemoryStore):
     async def clear_actions(self) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM actions")
+
+    async def get_voice_settings(self) -> VoiceSettings:
+        with self._connect() as conn:
+            row = conn.execute("SELECT enabled, voice FROM voice_settings WHERE id = 1").fetchone()
+        if row is None:
+            return VoiceSettings()
+        return VoiceSettings(enabled=bool(row[0]), voice=row[1] if row[1] in {"male", "female"} else "male")
+
+    async def save_voice_settings(self, settings: VoiceSettings) -> None:
+        if settings.voice not in {"male", "female"}:
+            raise ValueError("voice must be 'male' or 'female'")
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO voice_settings (id, enabled, voice) VALUES (1, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, voice = excluded.voice",
+                (int(settings.enabled), settings.voice),
+            )
 
 
 def _action_outcome(result: ToolResult) -> str:

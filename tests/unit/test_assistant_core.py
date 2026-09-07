@@ -2,7 +2,7 @@ from typing import Any
 
 from atlas.core.assistant.core import _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory
+from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory, VoiceSettings
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
 from atlas.core.tools.registry import ToolRegistry
 from atlas.core.tools.system_tools import GetProcessesTool
@@ -26,6 +26,7 @@ class _InMemoryStore(MemoryStore):
         self._turns: list[MemoryTurn] = []
         self._memories: list[SavedMemory] = []
         self._actions: list[ActionRecord] = []
+        self._voice_settings = VoiceSettings()
 
     async def add_turn(self, role: str, content: str) -> None:
         self._turns.append(MemoryTurn(role=role, content=content, timestamp=0.0))
@@ -75,6 +76,12 @@ class _InMemoryStore(MemoryStore):
 
     async def clear_actions(self) -> None:
         self._actions.clear()
+
+    async def get_voice_settings(self) -> VoiceSettings:
+        return self._voice_settings
+
+    async def save_voice_settings(self, settings: VoiceSettings) -> None:
+        self._voice_settings = settings
 
 
 class _ScriptedLLM(LLMProvider):
