@@ -138,17 +138,31 @@ class SQLiteMemoryStore(MemoryStore):
             row = conn.execute("SELECT enabled, voice FROM voice_settings WHERE id = 1").fetchone()
         if row is None:
             return VoiceSettings()
-        return VoiceSettings(enabled=bool(row[0]), voice=row[1] if row[1] in {"male", "female"} else "male")
+        return VoiceSettings(enabled=bool(row[0]), voice=_normalize_voice(row[1]))
 
     async def save_voice_settings(self, settings: VoiceSettings) -> None:
-        if settings.voice not in {"male", "female"}:
-            raise ValueError("voice must be 'male' or 'female'")
+        if settings.voice not in _VOICE_IDS:
+            raise ValueError("voice must be a supported voice profile")
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO voice_settings (id, enabled, voice) VALUES (1, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, voice = excluded.voice",
                 (int(settings.enabled), settings.voice),
             )
+
+
+_VOICE_IDS = {
+    "male_alex", "male_daniel", "male_eddy", "female_samantha", "female_ava", "female_karen"
+}
+
+
+def _normalize_voice(voice: str) -> str:
+    """Migrate v0.1's gender-only setting without a database migration."""
+    if voice == "male":
+        return "male_alex"
+    if voice == "female":
+        return "female_samantha"
+    return voice if voice in _VOICE_IDS else "male_alex"
 
 
 def _action_outcome(result: ToolResult) -> str:
