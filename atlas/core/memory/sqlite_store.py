@@ -177,7 +177,6 @@ _NEURAL_VOICE_IDS = {
     "male_joe",
     "male_hfc",
     "female_amy",
-    "female_lessac",
     "female_hfc",
 }
 
@@ -207,6 +206,8 @@ def _normalize_engine(engine: str) -> str:
 
 
 def _normalize_neural_voice(voice: str) -> str:
+    if voice == "female_lessac":
+        return "female_amy"
     return voice if voice in _NEURAL_VOICE_IDS else "male_ryan"
 
 

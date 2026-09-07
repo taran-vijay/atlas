@@ -20,11 +20,10 @@ VOICE_MODELS=(
   en_US-joe-medium
   en_US-hfc_male-medium
   en_US-amy-medium
-  en_US-lessac-high
   en_US-hfc_female-medium
 )
 
-echo "Downloading six Atlas neural voice models..."
+echo "Downloading five Atlas neural voice models..."
 for voice_model in "${VOICE_MODELS[@]}"; do
   "$PYTHON_BIN" -m piper.download_voices --download-dir "$VOICE_DIR" "$voice_model"
 done

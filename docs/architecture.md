@@ -1,83 +1,75 @@
 # Architecture
 
+Atlas is a local macOS application with two entry points:
+
+- `atlas` for terminal chat
+- `atlas local` for the native desktop app
+
+Both use the same `AssistantCore`, local Ollama provider, SQLite memory store,
+and permission-enforcing tool registry.
+
+## Runtime flow
+
+```text
+Desktop app or terminal chat
+             |
+             v
+       AssistantCore
+        /     |      \
+       v      v       v
+  Ollama   Memory   ToolRegistry
+  (local)  (SQLite)      |
+                     local tools
+                         |
+             confirmation + verification for actions
+                         |
+                optional local voice output
+```
+
+The desktop app checks the local Ollama connection before it opens. Voice
+output is optional and uses a macOS system voice or a local Piper neural
+model. No reply text is sent to an external speech service.
+
 ## Repository layout
 
-```
+```text
 atlas/
   atlas/
-    cli.py                 # V1 entry point: text-in/text-out loop
+    app.py                 # native macOS desktop app
+    cli.py                 # terminal chat and `atlas local` command
     core/
-      config/               # typed settings (pydantic-settings)
-      llm/                  # LLMProvider interface + OllamaProvider
-      tools/                # Tool base class + permission-enforcing registry
-      memory/               # MemoryStore interface + SQLite implementation
-      assistant/            # AssistantCore orchestration loop
-      voice/                # WakeWordDetector / SpeechRecognizer / SpeechSynthesizer interfaces
-      security/             # AuditLogger
-    platforms/
-      base.py                # PlatformIntegration interface
-      macos/                 # macOS implementation (Milestone 4, not yet built)
-      windows/                # placeholder only
-  tests/
-    unit/
-    integration/
+      assistant/           # conversation and tool orchestration
+      config/              # typed configuration
+      llm/                 # Ollama provider and LLM interface
+      memory/              # local SQLite history, memories, actions, settings
+      tools/               # schemas, safety registry, system and action tools
+      voice/               # macOS and Piper speech output
+      security/            # append-only audit logger interface
   docs/
   scripts/
+  tests/
 ```
 
-Every subsystem core code depends on is an abstract interface
-(`LLMProvider`, `Tool`, `MemoryStore`, `WakeWordDetector`, `SpeechRecognizer`,
-`SpeechSynthesizer`, `PlatformIntegration`). Concrete implementations are
-swapped in via configuration, never imported directly by orchestration code.
-This is what makes "replace the LLM" or "add Windows support" a matter of
-writing a new implementation of an existing interface, not a rewrite.
+## Tool boundary
 
-## Data flow (target architecture, voice added in Milestone 2)
+The LLM cannot run commands directly. It may request a registered tool, but
+`ToolRegistry.dispatch()` is the only execution path. The registry validates
+arguments, checks the tool's permission tier, requests approval for actions,
+contains implementation failures, verifies completion where possible, and
+records confirmation-gated action outcomes.
 
-```
-User
-  |
-  v
-Wake word detector  (on-device, always listening)
-  |
-  v
-Speech-to-text      (local, e.g. faster-whisper)
-  |
-  v
-Assistant core  <---------------------+
-  |  (local LLM decides response      |
-  |   and/or which tool to call)      |
-  v                                   |
-Tool executor  (permission-gated) ----+
-  |
-  v
-Local OS & data  (calendar, mail, files, apps -- read via platform integration)
-  |
-  v
-Text-to-speech      (local, e.g. Piper)
-  |
-  v
-User
-```
+Tool results are structured. The assistant only uses successful results from
+the current request for machine-state claims; unavailable results are reported
+as unavailable instead of being guessed.
 
-In V1 (current state), there is no voice and no tools yet -- the flow is
-just `user text -> Assistant core -> local LLM -> reply text`, with an empty
-`ToolRegistry` wired in so the orchestration boundary already exists.
+## Data storage
 
-## Why this shape
+Atlas stores conversation turns, explicit saved memories, action history, and
+voice preferences in a local SQLite database under `~/.atlas`. Logs are also
+local. Neural voice models live under `~/.atlas/voices` by default.
 
-- **No component silently escalates.** The LLM proposes a tool call; it
-  never executes anything. `ToolRegistry.dispatch()` is the only path from
-  a tool call to real system access, and it enforces permissions on every
-  call, not just the ones a developer remembers to check.
-- **Everything the LLM depends on is replaceable.** `LLMProvider`,
-  `MemoryStore`, and the voice interfaces are all things `AssistantCore`
-  is written against, not concrete classes -- see `docs/roadmap.md` for
-  what's expected to change first.
-- **Platform code stays out of core.** `atlas/core` never imports
-  `atlas/platforms`. Only tool implementations (added in Milestone 4)
-  will depend on a `PlatformIntegration`, keeping the orchestration loop
-  identical across macOS and (eventually) Windows.
+## Next boundary
 
-See `docs/security-model.md` for the permission and prompt-injection model,
-and `docs/roadmap.md` for what's built vs. planned.
+Wake-word detection and speech-to-text are intentionally separate from speech
+output. When voice input arrives, it will feed text into the same
+`AssistantCore` rather than bypassing the safety, memory, or tool layers.

@@ -57,7 +57,7 @@ def test_neural_voice_profiles_resolve_to_distinct_male_and_female_models(tmp_pa
     assert speaker.model_path("male_ryan").name == "en_US-ryan-high.onnx"
     assert speaker.model_path("male_joe").name == "en_US-joe-medium.onnx"
     assert speaker.model_path("female_amy").name == "en_US-amy-medium.onnx"
-    assert speaker.model_path("female_lessac").name == "en_US-lessac-high.onnx"
+    assert speaker.model_path("female_hfc").name == "en_US-hfc_female-medium.onnx"
 
 
 async def test_neural_progress_uses_the_generated_audio_duration() -> None:

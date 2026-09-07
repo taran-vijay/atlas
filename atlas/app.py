@@ -10,6 +10,7 @@ import logging
 import platform
 import threading
 import tkinter as tk
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
@@ -26,6 +27,8 @@ from atlas.core.voice.macos_speaker import VOICE_OPTIONS, _speech_text
 from atlas.core.voice.piper_speaker import NEURAL_VOICE_OPTIONS, LocalVoiceSpeaker
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
+_STARTUP_ANNOUNCEMENT = "ATLAS — Adaptive Tactical Learning & Assistance System is now online."
+_INITIAL_GREETING = "Hello — I’m Atlas. What would you like to work on?"
 
 
 class HandlesMessage(Protocol):
@@ -44,6 +47,21 @@ class HandlesMemory(HandlesMessage, Protocol):
     async def get_voice_settings(self) -> VoiceSettings: ...
 
     async def save_voice_settings(self, settings: VoiceSettings) -> None: ...
+
+
+class SpeaksResponses(Protocol):
+    async def speak(
+        self,
+        text: str,
+        settings: VoiceSettings,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> bool: ...
+
+
+async def _speak_startup_sequence(speaker: SpeaksResponses, settings: VoiceSettings) -> None:
+    """Speak the online confirmation before Atlas's first visible reply."""
+    for line in (_STARTUP_ANNOUNCEMENT, _INITIAL_GREETING):
+        await speaker.speak(line, settings)
 
 
 class DesktopConfirmationBridge:
@@ -191,7 +209,7 @@ class AtlasDesktopApp:
         self._transcript.pack(fill=tk.BOTH, expand=True, pady=(1, 0))
         self._transcript.tag_configure("atlas", foreground="#73e0d4", font=("Helvetica", 10, "bold"))
         self._transcript.tag_configure("user", foreground="#f6c35c", font=("Helvetica", 10, "bold"))
-        self._append("Atlas", "Hello — I’m Atlas. What would you like to work on?")
+        self._append("Atlas", _INITIAL_GREETING)
 
         composer = tk.Frame(content, bg="#101923", highlightbackground="#24455b", highlightthickness=1)
         composer.pack(fill=tk.X, pady=(1, 0))
@@ -204,6 +222,14 @@ class AtlasDesktopApp:
         self._send_button.pack(side=tk.RIGHT, padx=(0, 14), pady=14)
         self._input.focus_set()
         self._refresh_field()
+        if self._voice_settings.enabled:
+            self._root.after(350, self._start_startup_voice)
+
+    def _start_startup_voice(self) -> None:
+        threading.Thread(target=self._speak_startup_voice, daemon=True).start()
+
+    def _speak_startup_voice(self) -> None:
+        asyncio.run(_speak_startup_sequence(self._speaker, self._voice_settings))
 
     def _refresh_field(self) -> None:
         now = datetime.now().astimezone().strftime("LOCAL TIME  %H:%M:%S  %Z")

@@ -1,153 +1,113 @@
 # Atlas
 
-A local-first, privacy-focused, voice-controlled personal AI assistant.
+Atlas is a local-first personal AI assistant for macOS. It runs its language
+model through Ollama, keeps its memories and logs on your Mac, and only acts
+through explicitly scoped, permission-gated tools.
 
-Atlas runs on your own machine, talks to a local LLM, and keeps your data
-where it belongs -- with you. No mandatory account, no mandatory server, no
-subscription, and no cloud API required to use the default experience.
+> **Status: local macOS desktop assistant.** Atlas has a native desktop app,
+> local memory, system/file tools, confirmation-gated actions, and optional
+> on-device voice output. Voice input and integrations such as Calendar and
+> Mail are not implemented yet.
 
-> **Status: early / V1 (text-only).** Voice, tools, and macOS integrations
-> are designed into the architecture but not all built yet -- see
-> [`docs/roadmap.md`](docs/roadmap.md) for exactly what's done vs. planned.
+## What Atlas can do
 
-## Why
+- Run a native macOS desktop chat app or a terminal chat session
+- Use a local Ollama model for normal conversation and writing
+- Remember facts you explicitly ask it to save, locally in SQLite
+- Read system time, OS details, battery, processes, network, and selected
+  local-file information
+- Open apps/files, write to the clipboard, and perform scoped file actions
+  only after your in-app confirmation
+- Keep an action history and distinguish verified results from unavailable data
+- Read replies aloud with a built-in macOS voice or optional local Piper
+  neural voices
 
-Most "AI assistant" projects either wrap a paid cloud API or stay a toy demo.
-Atlas is built to do neither: it's a real local pipeline (wake word -> speech
-recognition -> local LLM -> permission-gated tools -> speech synthesis) with
-a genuinely modular architecture, so it can grow from a text chatbot into a
-real voice assistant without a rewrite at each step.
+Atlas cannot yet read Calendar, Mail, Messages, reminders, browser data, or
+other connected services. It says so directly instead of inventing results.
 
-## Architecture
+## Privacy and safety
 
-```
-User -> Wake word -> Speech-to-text -> Assistant core (local LLM)
-                                              |
-                                     Tool executor (permission-gated)
-                                              |
-                                  Local OS & data (calendar, files, apps)
-                                              |
-                                     Text-to-speech -> User
-```
-
-Full write-up, including why each piece is designed the way it is:
-[`docs/architecture.md`](docs/architecture.md).
-
-## Features
-
-**Working today (V1):**
-- Local LLM conversation loop via [Ollama](https://ollama.com)
-- Typed configuration system (env vars / `.env`)
-- Rolling conversation memory (SQLite, local file)
-- Structured logging
-- Tool registry + permission framework (no tools registered yet -- see roadmap)
-- Unit + integration test suite
-
-**Planned:** wake word activation, local speech-to-text/text-to-speech,
-real macOS tools (calendar, notifications, app launching), long-term memory,
-and more -- see [`docs/roadmap.md`](docs/roadmap.md).
+Atlas has no mandatory account, cloud API, or server. The local model does not
+execute shell commands directly: every capability is an individual tool with a
+permission tier. Read-only tools run only for explicit computer/file requests;
+actions always ask for approval first. See [the security model](docs/security-model.md).
 
 ## Requirements
 
-- macOS (primary target; Windows is architected for but not implemented)
-- Python 3.11+
-- [Ollama](https://ollama.com) installed and running
-- ~8-16GB RAM depending on the model you choose (see below)
+- macOS
+- Python 3.11 or newer
+- [Ollama](https://ollama.com) installed
+- Around 8–16 GB RAM, depending on your selected local model
 
-## Quick start
+## Setup and launch
+
+Clone Atlas, enter the project folder, and run setup once:
 
 ```bash
 git clone <your-repo-url> atlas
 cd atlas
-./scripts/setup.sh          # creates a venv, installs deps, pulls the default model
-source .venv/bin/activate
-atlas
+./scripts/setup.sh
 ```
 
-`scripts/setup.sh` checks for Python and Ollama, creates `.venv`, installs
-Atlas in editable mode, pulls the default model (`llama3.1:8b`), and copies
-`.env.example` to `.env`. If you'd rather do it by hand:
+Setup creates Atlas's local environment, installs its dependencies, pulls the
+default Ollama model, creates `.env` if needed, and installs a safe launcher.
+Open a new Terminal and run:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-ollama pull llama3.1:8b
-cp .env.example .env
-atlas
+atlas local
 ```
 
-## Configuration
+That starts the desktop app. Use `atlas` alone for terminal chat. If another
+app already owns the `atlas` command, setup deliberately leaves it alone; from
+the project folder, use:
 
-All configuration lives in environment variables (or `.env`), prefixed
-`ATLAS_`. See [`.env.example`](.env.example) for the full list, including
-`ATLAS_ASSISTANT_NAME`, `ATLAS_LLM_MODEL`, `ATLAS_OLLAMA_HOST`, and
-`ATLAS_LOG_LEVEL`. Nothing is hardcoded elsewhere in the codebase -- every
-setting flows through `atlas.core.config.schema.AtlasConfig`.
+```bash
+source .venv/bin/activate
+atlas local
+```
 
-If your machine has less RAM, swap `ATLAS_LLM_MODEL` for a smaller model
-(e.g. a 3B-class model) and `ollama pull` it first.
+## Neural voice (optional)
 
-## Permissions
-
-V1 doesn't request any macOS permissions -- it's text-only with no tools
-registered. Future milestones will request Microphone, Calendar, and
-Automation access as those features ship; see
-[`docs/permissions.md`](docs/permissions.md) for what each one will be used
-for and when.
-
-## Security model
-
-The LLM never executes anything directly -- every capability is an explicit
-`Tool` with a declared permission tier (`READ_ONLY` / `CONFIRM` /
-`PRIVILEGED`), enforced by a single registry choke point. There is no
-general shell-execution tool. Full details, including how untrusted content
-(emails, web pages) is kept separate from instructions, are in
-[`docs/security-model.md`](docs/security-model.md).
-
-## Troubleshooting
-
-**"Could not reach Ollama"** -- make sure `ollama serve` is running and
-you've pulled the model named in `ATLAS_LLM_MODEL` (`ollama pull
-llama3.1:8b`).
-
-**Slow responses** -- try a smaller model, or check Activity Monitor for
-memory pressure; local inference on an underpowered machine is the most
-common cause of latency.
-
-## Neural voice (macOS)
-
-Atlas can use on-device Piper neural voices for clearer, more natural speech.
-It is optional: until a selected model is installed, Atlas uses your chosen
-macOS voice automatically. To install the local engine and all six Atlas
-neural voices (three male and three female), run this once from the project
-directory:
+Atlas starts with macOS speech as a fallback. To install its five local Piper
+neural voice models—three male and two female—run:
 
 ```bash
 ./scripts/setup_neural_voice.sh
 ```
 
-Restart Atlas, then select **Settings → Voice → Local Neural** and choose a
-specific profile. The models and all synthesized audio remain on your Mac. To
-use another compatible Piper model directory, set
-`ATLAS_NEURAL_VOICE_MODELS_DIR` in your `.env` file.
+Restart with `atlas local`, then choose **Settings → Voice → Local Neural**.
+The models and generated audio stay on your Mac. Set
+`ATLAS_NEURAL_VOICE_MODELS_DIR` in `.env` to use a different compatible Piper
+model directory.
 
-## Testing
+## Configuration
+
+Configuration lives in `.env` or environment variables beginning with
+`ATLAS_`. See [`.env.example`](.env.example). Useful settings include
+`ATLAS_ASSISTANT_NAME`, `ATLAS_LLM_MODEL`, `ATLAS_OLLAMA_HOST`, and
+`ATLAS_NEURAL_VOICE_MODELS_DIR`.
+
+## Permissions
+
+Atlas never bypasses macOS permission prompts. Read-only system tools need no
+special permission, while every local action requires an in-app confirmation.
+Calendar, Mail, notifications, microphone access, and voice input are not
+implemented yet. Details are in [macOS permissions](docs/permissions.md).
+
+## Project direction
+
+The next major layer is local voice input—wake word detection and
+speech-to-text—followed by carefully scoped service integrations. See the
+[roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
+
+## Development checks
 
 ```bash
+source .venv/bin/activate
 pytest
+ruff check .
+mypy .
 ```
-
-Unit tests cover config, the tool registry's permission enforcement, and
-the assistant core in isolation (mocked LLM). Integration tests run a
-scripted multi-turn conversation through the real SQLite-backed memory
-store with a stubbed LLM, so they need no network access or running model.
-
-## Contributing
-
-This is an early-stage personal project growing milestone by milestone --
-see [`docs/roadmap.md`](docs/roadmap.md) before picking something to work
-on, and open an issue to discuss non-trivial changes first. Please run
-`pytest`, `ruff check .`, and `mypy .` before opening a PR.
 
 ## License
 

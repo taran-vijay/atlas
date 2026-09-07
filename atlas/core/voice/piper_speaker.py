@@ -22,7 +22,6 @@ NEURAL_VOICE_OPTIONS = {
     "male_joe": ("Joe", "Adult male · natural, calm", "en_US-joe-medium.onnx"),
     "male_hfc": ("HFC Male", "Adult male · clear, measured", "en_US-hfc_male-medium.onnx"),
     "female_amy": ("Amy", "Adult female · warm, natural", "en_US-amy-medium.onnx"),
-    "female_lessac": ("Lessac", "Adult female · clear, high-quality", "en_US-lessac-high.onnx"),
     "female_hfc": (
         "HFC Female",
         "Adult female · composed, articulate",

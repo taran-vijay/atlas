@@ -1,4 +1,4 @@
-"""macOS PlatformIntegration implementation (Milestone 4 -- not yet built).
+"""Future macOS PlatformIntegration adapter.
 
 Planned approach:
   - Calendar/Reminders via EventKit (pyobjc)
