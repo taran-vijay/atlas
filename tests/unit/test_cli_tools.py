@@ -19,4 +19,6 @@ def test_cli_registers_read_and_confirmation_gated_tools() -> None:
         "desktop.copy_to_clipboard",
         "filesystem.create_text_file",
         "filesystem.move_file",
+        "filesystem.rename_file",
+        "filesystem.move_to_trash",
     ]

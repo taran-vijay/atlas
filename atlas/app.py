@@ -75,6 +75,13 @@ class DesktopConfirmationBridge:
                 "move a local file",
                 f"From: {arguments.get('source', '')}\nTo: {arguments.get('destination', '')}",
             )
+        if tool_name == "filesystem.rename_file":
+            return (
+                "rename a local file",
+                f"File: {arguments.get('path', '')}\nNew name: {arguments.get('new_name', '')}",
+            )
+        if tool_name == "filesystem.move_to_trash":
+            return "move a local file to Trash", f"File: {arguments.get('path', '')}"
         return "perform an action", f"Tool: {tool_name}"
 
 
@@ -129,7 +136,7 @@ class AtlasDesktopApp:
         self._field_state_label.pack(anchor=tk.W, padx=14)
         self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
         self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
-        tk.Label(field, text="14 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
+        tk.Label(field, text="16 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
         tk.Button(sidebar, text="REVIEW MEMORIES", command=self._open_memory_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(fill=tk.X, padx=20, pady=(14, 0))
         device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
         device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)

@@ -224,6 +224,120 @@ class MoveFileTool(Tool):
         )
 
 
+class RenameFileTool(Tool):
+    """Rename one regular file in place without replacing another file."""
+
+    def __init__(self) -> None:
+        self.name = "filesystem.rename_file"
+        self.description = (
+            "Rename one existing regular file in its current folder after the user confirms. "
+            "Never replaces an existing file or renames directories or symlinks."
+        )
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Existing file to rename."},
+                "new_name": {"type": "string", "description": "New filename only, not a path."},
+            },
+            "required": ["path", "new_name"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.CONFIRM
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        path = arguments.get("path")
+        new_name = arguments.get("new_name")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("'path' must be a non-empty string")
+        if not isinstance(new_name, str) or not new_name.strip():
+            raise ValueError("'new_name' must be a non-empty string")
+        if new_name in {".", ".."} or Path(new_name).name != new_name:
+            raise ValueError("'new_name' must be a filename, not a path")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        source = Path(arguments["path"]).expanduser()
+        destination = source.with_name(arguments["new_name"])
+        if source.is_symlink() or destination.is_symlink() or destination.parent.is_symlink():
+            return ToolResult(False, "", error="Refusing to rename a file through a symlink.")
+        if not source.is_file():
+            return ToolResult(False, "", error=f"Source is not a regular file: {source}")
+        if destination.exists():
+            return ToolResult(False, "", error=f"Destination already exists: {destination}")
+        try:
+            resolved_source, resolved_destination = await asyncio.to_thread(
+                _move_file_without_replacing, source, destination
+            )
+        except FileExistsError:
+            return ToolResult(False, "", error=f"Destination already exists: {destination}")
+        except OSError:
+            return ToolResult(False, "", error="Could not rename the file safely.")
+        return ToolResult(
+            True,
+            "Renamed the file.",
+            data={"source": str(resolved_source), "destination": str(resolved_destination)},
+        )
+
+
+class MoveToTrashTool(Tool):
+    """Move one regular macOS file to Trash through Finder."""
+
+    _FINDER_TRASH_SCRIPT = (
+        "on run argv\n"
+        "set targetFile to (POSIX file (item 1 of argv)) as alias\n"
+        "tell application \"Finder\" to delete targetFile\n"
+        "end run"
+    )
+
+    def __init__(self) -> None:
+        self.name = "filesystem.move_to_trash"
+        self.description = (
+            "Move one existing regular file to the macOS Trash after the user confirms. "
+            "This does not permanently delete files and rejects directories and symlinks."
+        )
+        self.parameters = {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "File to move to Trash."}},
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.CONFIRM
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        path = arguments.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("'path' must be a non-empty string")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        if platform.system() != "Darwin":
+            return ToolResult(False, "", error="Moving files to Trash is only implemented on macOS.")
+        path = Path(arguments["path"]).expanduser()
+        if path.is_symlink():
+            return ToolResult(False, "", error="Refusing to move a symlink to Trash.")
+        if not path.is_file():
+            return ToolResult(False, "", error=f"Path is not a regular file: {path}")
+        resolved = path.resolve()
+        process = await asyncio.create_subprocess_exec(
+            "osascript",
+            "-e",
+            self._FINDER_TRASH_SCRIPT,
+            "--",
+            str(resolved),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(process.communicate(), timeout=10)
+        if process.returncode != 0:
+            return ToolResult(
+                False,
+                "",
+                error=(
+                    "Could not move the file to Trash. macOS may need permission for "
+                    "Atlas or Terminal to control Finder."
+                ),
+            )
+        return ToolResult(True, "Moved the file to Trash.", data={"path": str(resolved)})
+
+
 async def _run_open(command: list[str], failure: str, data: dict[str, str]) -> ToolResult:
     process = await asyncio.create_subprocess_exec(
         *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
