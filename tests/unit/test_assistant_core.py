@@ -2,7 +2,7 @@ from typing import Any
 
 from atlas.core.assistant.core import _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import MemoryStore, MemoryTurn, SavedMemory
+from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
 from atlas.core.tools.registry import ToolRegistry
 from atlas.core.tools.system_tools import GetProcessesTool
@@ -25,6 +25,7 @@ class _InMemoryStore(MemoryStore):
     def __init__(self) -> None:
         self._turns: list[MemoryTurn] = []
         self._memories: list[SavedMemory] = []
+        self._actions: list[ActionRecord] = []
 
     async def add_turn(self, role: str, content: str) -> None:
         self._turns.append(MemoryTurn(role=role, content=content, timestamp=0.0))
@@ -55,6 +56,25 @@ class _InMemoryStore(MemoryStore):
 
     async def clear_memories(self) -> None:
         self._memories.clear()
+
+    async def record_action(
+        self, tool_name: str, arguments: dict[str, Any], result: ToolResult
+    ) -> None:
+        self._actions.append(
+            ActionRecord(
+                id=len(self._actions) + 1,
+                tool_name=tool_name,
+                summary=tool_name,
+                outcome="COMPLETED" if result.success else "FAILED",
+                timestamp=0.0,
+            )
+        )
+
+    async def recent_actions(self, limit: int = 50) -> list[ActionRecord]:
+        return list(reversed(self._actions[-limit:]))
+
+    async def clear_actions(self) -> None:
+        self._actions.clear()
 
 
 class _ScriptedLLM(LLMProvider):

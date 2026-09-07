@@ -19,7 +19,7 @@ from atlas.cli import _build_tool_registry, _configure_logging
 from atlas.core.assistant.core import AssistantCore
 from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
-from atlas.core.memory.base import SavedMemory
+from atlas.core.memory.base import ActionRecord, SavedMemory
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
 
@@ -34,6 +34,10 @@ class HandlesMemory(HandlesMessage, Protocol):
     async def list_saved_memories(self) -> list[SavedMemory]: ...
 
     async def clear_saved_memories(self) -> None: ...
+
+    async def list_recent_actions(self) -> list[ActionRecord]: ...
+
+    async def clear_action_history(self) -> None: ...
 
 
 class DesktopConfirmationBridge:
@@ -70,6 +74,13 @@ class DesktopConfirmationBridge:
             text = str(arguments.get("text", ""))
             preview = text if len(text) <= 300 else text[:297] + "..."
             return "create a new text file", f"File: {arguments.get('path', '')}\nText: {preview}"
+        if tool_name == "filesystem.create_folder":
+            return "create a new folder", f"Folder: {arguments.get('path', '')}"
+        if tool_name == "filesystem.copy_file":
+            return (
+                "copy a local file",
+                f"From: {arguments.get('source', '')}\nTo: {arguments.get('destination', '')}",
+            )
         if tool_name == "filesystem.move_file":
             return (
                 "move a local file",
@@ -136,8 +147,9 @@ class AtlasDesktopApp:
         self._field_state_label.pack(anchor=tk.W, padx=14)
         self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
         self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
-        tk.Label(field, text="16 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
+        tk.Label(field, text="18 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
         tk.Button(sidebar, text="REVIEW MEMORIES", command=self._open_memory_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(fill=tk.X, padx=20, pady=(14, 0))
+        tk.Button(sidebar, text="ACTION HISTORY", command=self._open_action_history, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=8).pack(fill=tk.X, padx=20, pady=(8, 0))
         device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
         device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
         self._device_image: tk.PhotoImage | None
@@ -215,6 +227,44 @@ class AtlasDesktopApp:
         tk.Button(window, text="CLEAR ALL MEMORIES", command=clear_all, bg="#3d2028", fg="#ffb5bc", activebackground="#642b36", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(anchor=tk.E, padx=22, pady=18)
         refresh()
 
+    def _open_action_history(self) -> None:
+        window = tk.Toplevel(self._root)
+        window.title("Atlas // Action History")
+        window.geometry("620x440")
+        window.configure(bg="#0b121c")
+        tk.Label(window, text="ACTION HISTORY", fg="#73e0d4", bg="#0b121c", font=("Helvetica", 16, "bold")).pack(anchor=tk.W, padx=22, pady=(22, 2))
+        tk.Label(window, text="Local record of confirmation-gated actions. Clipboard contents are never recorded.", fg="#91a6b8", bg="#0b121c", font=("Helvetica", 10)).pack(anchor=tk.W, padx=22, pady=(0, 15))
+        contents = scrolledtext.ScrolledText(window, wrap=tk.WORD, state=tk.DISABLED, bg="#101a26", fg="#e8f4fb", relief=tk.FLAT, padx=14, pady=12, font=("Helvetica", 11))
+        contents.pack(fill=tk.BOTH, expand=True, padx=22)
+
+        def refresh() -> None:
+            threading.Thread(target=load, daemon=True).start()
+
+        def load() -> None:
+            actions = asyncio.run(self._assistant.list_recent_actions())
+            self._root.after(0, render, actions)
+
+        def render(actions: list[ActionRecord]) -> None:
+            contents.configure(state=tk.NORMAL)
+            contents.delete("1.0", tk.END)
+            lines = [
+                f"[{action.outcome}] {datetime.fromtimestamp(action.timestamp).astimezone().strftime('%b %d, %H:%M')}\n{action.summary}"
+                for action in actions
+            ]
+            contents.insert(tk.END, "\n\n".join(lines) or "No confirmed actions yet.")
+            contents.configure(state=tk.DISABLED)
+
+        def clear_all() -> None:
+            if messagebox.askyesno("Clear action history", "Remove all action history?", parent=window):
+                threading.Thread(target=clear, daemon=True).start()
+
+        def clear() -> None:
+            asyncio.run(self._assistant.clear_action_history())
+            self._root.after(0, refresh)
+
+        tk.Button(window, text="CLEAR ACTION HISTORY", command=clear_all, bg="#3d2028", fg="#ffb5bc", activebackground="#642b36", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(anchor=tk.E, padx=22, pady=18)
+        refresh()
+
     def _set_field_state(self, state: str) -> None:
         self._field_state = state
         colors = {"READY": "#f6c35c", "PROCESSING": "#73e0d4"}
@@ -281,7 +331,8 @@ async def _create_assistant(
     llm = OllamaProvider(host=config.ollama_host, model=config.llm_model, temperature=config.llm_temperature, timeout=config.llm_request_timeout_seconds)
     if not await llm.is_available():
         raise RuntimeError(f"Could not reach Ollama at {config.ollama_host}.")
-    return AssistantCore(assistant_name=config.assistant_name, llm=llm, memory=SQLiteMemoryStore(config.memory_db_path), tools=_build_tool_registry(confirm=confirm), max_history_turns=config.memory_max_turns)
+    memory = SQLiteMemoryStore(config.memory_db_path)
+    return AssistantCore(assistant_name=config.assistant_name, llm=llm, memory=memory, tools=_build_tool_registry(confirm=confirm, audit=memory.record_action), max_history_turns=config.memory_max_turns)
 
 
 class ConnectionScreen:

@@ -6,6 +6,7 @@ Tool.execute() directly -- everything routes through ToolRegistry.dispatch().
 """
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
 
 ConfirmationCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
+ActionAuditCallback = Callable[[str, dict[str, Any], ToolResult], Awaitable[None]]
+_LOGGER = logging.getLogger(__name__)
 
 
 class ToolNotFoundError(Exception):
@@ -24,9 +27,15 @@ class PermissionDeniedError(Exception):
 
 
 class ToolRegistry:
-    def __init__(self, *, confirm: ConfirmationCallback | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        confirm: ConfirmationCallback | None = None,
+        audit: ActionAuditCallback | None = None,
+    ) -> None:
         self._tools: dict[str, Tool] = {}
         self._confirm = confirm
+        self._audit = audit
 
     def register(self, tool: Tool) -> None:
         if tool.name in self._tools:
@@ -72,18 +81,38 @@ class ToolRegistry:
                     )
                 approved = await self._confirm(tool.name, arguments)
                 if not approved:
-                    return ToolResult(
+                    return await self._finalize(
+                        tool,
+                        arguments,
+                        ToolResult(
                         success=False, content="", error="User declined confirmation"
+                        ),
                     )
-            return await tool.execute(arguments)
+            return await self._finalize(tool, arguments, await tool.execute(arguments))
         except PermissionDeniedError as exc:
-            return ToolResult(success=False, content="", error=str(exc))
-        except Exception:  # noqa: BLE001 - a tool boundary must contain implementation failures.
-            return ToolResult(
-                success=False,
-                content="",
-                error=f"'{tool.name}' could not complete safely.",
+            return await self._finalize(
+                tool, arguments, ToolResult(success=False, content="", error=str(exc))
             )
+        except Exception:  # noqa: BLE001 - a tool boundary must contain implementation failures.
+            return await self._finalize(
+                tool,
+                arguments,
+                ToolResult(
+                    success=False,
+                    content="",
+                    error=f"'{tool.name}' could not complete safely.",
+                ),
+            )
+
+    async def _finalize(
+        self, tool: Tool, arguments: dict[str, Any], result: ToolResult
+    ) -> ToolResult:
+        if tool.permission != PermissionLevel.READ_ONLY and self._audit is not None:
+            try:
+                await self._audit(tool.name, arguments, result)
+            except Exception:  # recording must not change an action outcome.
+                _LOGGER.exception("action_audit_failed tool=%s", tool.name)
+        return result
 
     @staticmethod
     def _normalize_arguments(tool: Tool, arguments: dict[str, Any]) -> dict[str, Any]:
