@@ -3,7 +3,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from atlas.core.tools.action_tools import CopyToClipboardTool, OpenApplicationTool, OpenFileTool
+from atlas.core.tools.action_tools import (
+    CopyToClipboardTool,
+    CreateTextFileTool,
+    MoveFileTool,
+    OpenApplicationTool,
+    OpenFileTool,
+)
 from atlas.core.tools.registry import ToolRegistry
 
 
@@ -77,3 +83,73 @@ async def test_copy_to_clipboard_reports_character_count() -> None:
     assert result.success is True
     assert result.data == {"characters": 5}
     process.communicate.assert_awaited_once_with(b"Hello")
+
+
+async def test_create_text_file_writes_new_utf8_file(tmp_path: Path) -> None:
+    path = tmp_path / "atlas-note.txt"
+
+    result = await CreateTextFileTool().execute({"path": str(path), "text": "Mission log"})
+
+    assert result.success is True
+    assert path.read_text(encoding="utf-8") == "Mission log"
+    assert result.data == {"path": str(path.resolve()), "characters": 11}
+
+
+async def test_create_text_file_never_runs_when_confirmation_is_declined(tmp_path: Path) -> None:
+    async def decline(name: str, arguments: dict[str, object]) -> bool:
+        return False
+
+    path = tmp_path / "atlas-note.txt"
+    registry = ToolRegistry(confirm=decline)
+    registry.register(CreateTextFileTool())
+
+    result = await registry.dispatch(
+        "filesystem.create_text_file", {"path": str(path), "text": "Mission log"}
+    )
+
+    assert result.success is False
+    assert result.error == "User declined confirmation"
+    assert path.exists() is False
+
+
+async def test_create_text_file_does_not_overwrite_existing_file(tmp_path: Path) -> None:
+    path = tmp_path / "atlas-note.txt"
+    path.write_text("original", encoding="utf-8")
+
+    result = await CreateTextFileTool().execute({"path": str(path), "text": "replacement"})
+
+    assert result.success is False
+    assert "already exists" in (result.error or "")
+    assert path.read_text(encoding="utf-8") == "original"
+
+
+async def test_move_file_moves_to_new_path_without_replacing(tmp_path: Path) -> None:
+    source = tmp_path / "inbox" / "report.txt"
+    source.parent.mkdir()
+    source.write_text("Atlas report", encoding="utf-8")
+    destination = tmp_path / "archive" / "report.txt"
+    destination.parent.mkdir()
+
+    result = await MoveFileTool().execute(
+        {"source": str(source), "destination": str(destination)}
+    )
+
+    assert result.success is True
+    assert source.exists() is False
+    assert destination.read_text(encoding="utf-8") == "Atlas report"
+
+
+async def test_move_file_never_replaces_existing_destination(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    destination = tmp_path / "destination.txt"
+    source.write_text("source", encoding="utf-8")
+    destination.write_text("original destination", encoding="utf-8")
+
+    result = await MoveFileTool().execute(
+        {"source": str(source), "destination": str(destination)}
+    )
+
+    assert result.success is False
+    assert "already exists" in (result.error or "")
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "original destination"

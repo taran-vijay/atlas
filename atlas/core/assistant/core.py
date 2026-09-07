@@ -69,6 +69,10 @@ _TOOL_REQUEST_TERMS = (
     "launch ",
     "copy ",
     "clipboard",
+    "create a note",
+    "create a file",
+    "save a note",
+    "move ",
 )
 
 _UNAVAILABLE_INTEGRATION_TERMS = {
