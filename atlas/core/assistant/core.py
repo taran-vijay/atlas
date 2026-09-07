@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import ActionRecord, MemoryStore, SavedMemory
+from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory
 from atlas.core.tools.base import ToolResult
 from atlas.core.tools.registry import ToolRegistry
 
@@ -27,7 +27,9 @@ _TOOL_SYSTEM_PROMPT_TEMPLATE = (
     "explicitly asks for information from their computer or files. Never call a "
     "tool for greetings, casual conversation, writing, brainstorming, or general "
     "questions. Tools that perform an action require the user's explicit approval "
-    "in the desktop app before they execute."
+    "in the desktop app before they execute. Successful tool JSON includes a verification "
+    "field: claim completion only when it is 'verified'; when it is 'not_applicable', say "
+    "that the operating-system request was accepted but do not invent an observed outcome."
 )
 
 _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE = (
@@ -121,6 +123,7 @@ class AssistantCore:
         memory: MemoryStore,
         tools: ToolRegistry,
         max_history_turns: int = 20,
+        max_history_characters: int = 12_000,
         max_tool_hops: int = 3,
     ) -> None:
         self._name = assistant_name
@@ -128,6 +131,7 @@ class AssistantCore:
         self._memory = memory
         self._tools = tools
         self._max_history_turns = max_history_turns
+        self._max_history_characters = max_history_characters
         self._max_tool_hops = max_tool_hops
 
     async def handle_message(self, user_input: str) -> str:
@@ -145,7 +149,9 @@ class AssistantCore:
             await self._memory.add_turn("assistant", reply)
             return reply
 
-        history = await self._memory.recent_turns(self._max_history_turns)
+        history = self._bounded_history(
+            await self._memory.recent_turns(self._max_history_turns)
+        )
         tools_enabled = self._user_requested_tool_data(user_input)
         system_prompt = (
             _TOOL_SYSTEM_PROMPT_TEMPLATE if tools_enabled else _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE
@@ -288,6 +294,17 @@ class AssistantCore:
             if any(term in normalized for term in terms):
                 return integration
         return None
+
+    def _bounded_history(self, history: list[MemoryTurn]) -> list[MemoryTurn]:
+        """Keep the newest context within a predictable local-model workload."""
+        retained: list[MemoryTurn] = []
+        characters = 0
+        for turn in reversed(history):
+            if retained and characters + len(turn.content) > self._max_history_characters:
+                break
+            retained.append(turn)
+            characters += len(turn.content)
+        return list(reversed(retained))
 
     @staticmethod
     def _needs_plain_chat_retry(response: LLMResponse) -> bool:

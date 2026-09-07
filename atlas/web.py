@@ -109,6 +109,9 @@ async def _create_app(config: AtlasConfig) -> AtlasWebApp:
         model=config.llm_model,
         temperature=config.llm_temperature,
         timeout=config.llm_request_timeout_seconds,
+        context_tokens=config.llm_context_tokens,
+        max_response_tokens=config.llm_max_response_tokens,
+        keep_alive=config.llm_keep_alive,
     )
     if not await llm.is_available():
         raise RuntimeError(f"Could not reach Ollama at {config.ollama_host}.")
@@ -118,7 +121,8 @@ async def _create_app(config: AtlasConfig) -> AtlasWebApp:
             llm=llm,
             memory=SQLiteMemoryStore(config.memory_db_path),
             tools=_build_tool_registry(),
-            max_history_turns=config.memory_max_turns,
+        max_history_turns=config.memory_max_turns,
+        max_history_characters=config.memory_max_context_characters,
         )
     )
 

@@ -25,6 +25,8 @@ class ToolResult:
     content: str
     data: dict[str, Any] | None = None
     error: str | None = None
+    attempts: int = 1
+    verification: str = "not_applicable"
 
     def to_llm_content(self, tool_name: str) -> str:
         """Serialize an outcome in a stable, machine-readable form for the LLM.
@@ -36,6 +38,8 @@ class ToolResult:
         if self.success:
             payload["data"] = self.data
             payload["display"] = self.content
+            payload["verification"] = self.verification
+            payload["attempts"] = self.attempts
         else:
             payload["status"] = "error"
             payload["error"] = self.error or "The tool failed without an error message."
@@ -57,6 +61,14 @@ class Tool(ABC):
     @abstractmethod
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         """Perform the tool's action. Only called after validation and permission checks."""
+
+    async def preflight(self, arguments: dict[str, Any]) -> str | None:
+        """Return an explanation when execution cannot safely begin, otherwise None."""
+        return None
+
+    async def verify(self, arguments: dict[str, Any], result: ToolResult) -> bool | None:
+        """Confirm a successful action, or return None when it cannot be observed safely."""
+        return None
 
     def to_llm_schema(self) -> dict[str, Any]:
         """Describe this tool the way the LLM backend expects to see it."""

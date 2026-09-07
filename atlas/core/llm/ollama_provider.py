@@ -21,11 +21,17 @@ class OllamaProvider(LLMProvider):
         *,
         temperature: float = 0.4,
         timeout: float = 60.0,
+        context_tokens: int = 4096,
+        max_response_tokens: int = 512,
+        keep_alive: str = "5m",
     ) -> None:
         self._host = host.rstrip("/")
         self._model = model
         self._temperature = temperature
         self._timeout = timeout
+        self._context_tokens = context_tokens
+        self._max_response_tokens = max_response_tokens
+        self._keep_alive = keep_alive
 
     async def generate(
         self,
@@ -37,7 +43,12 @@ class OllamaProvider(LLMProvider):
             "model": self._model,
             "messages": [self._serialize_message(message) for message in messages],
             "stream": False,
-            "options": {"temperature": self._temperature},
+            "options": {
+                "temperature": self._temperature,
+                "num_ctx": self._context_tokens,
+                "num_predict": self._max_response_tokens,
+            },
+            "keep_alive": self._keep_alive,
         }
         if tools:
             payload["tools"] = tools

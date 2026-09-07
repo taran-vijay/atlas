@@ -8,6 +8,8 @@ def test_defaults_are_sensible() -> None:
     assert config.assistant_name == "Atlas"
     assert config.llm_backend == LLMBackend.OLLAMA
     assert config.memory_max_turns > 0
+    assert config.llm_context_tokens >= 1024
+    assert config.llm_max_response_tokens >= 64
 
 
 def test_env_prefix_overrides(monkeypatch: Any) -> None:
