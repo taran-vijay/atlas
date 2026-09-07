@@ -39,6 +39,8 @@ class ActionRecord:
 @dataclass(frozen=True)
 class VoiceSettings:
     enabled: bool = True
+    engine: str = "neural"
+    neural_voice: str = "male_ryan"
     voice: str = "male_alex"
 
 

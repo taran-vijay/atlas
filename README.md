@@ -114,6 +114,23 @@ llama3.1:8b`).
 memory pressure; local inference on an underpowered machine is the most
 common cause of latency.
 
+## Neural voice (macOS)
+
+Atlas can use on-device Piper neural voices for clearer, more natural speech.
+It is optional: until a selected model is installed, Atlas uses your chosen
+macOS voice automatically. To install the local engine and all six Atlas
+neural voices (three male and three female), run this once from the project
+directory:
+
+```bash
+./scripts/setup_neural_voice.sh
+```
+
+Restart Atlas, then select **Settings → Voice → Local Neural** and choose a
+specific profile. The models and all synthesized audio remain on your Mac. To
+use another compatible Piper model directory, set
+`ATLAS_NEURAL_VOICE_MODELS_DIR` in your `.env` file.
+
 ## Testing
 
 ```bash

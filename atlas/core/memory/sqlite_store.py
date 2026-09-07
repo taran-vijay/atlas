@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS actions (
 CREATE TABLE IF NOT EXISTS voice_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     enabled INTEGER NOT NULL,
+    engine TEXT NOT NULL DEFAULT 'neural',
+    neural_voice TEXT NOT NULL DEFAULT 'male_ryan',
     voice TEXT NOT NULL
 );
 """
@@ -58,6 +60,7 @@ class SQLiteMemoryStore(MemoryStore):
         self._db_path = db_path
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            _migrate_voice_settings(conn)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)
@@ -135,25 +138,59 @@ class SQLiteMemoryStore(MemoryStore):
 
     async def get_voice_settings(self) -> VoiceSettings:
         with self._connect() as conn:
-            row = conn.execute("SELECT enabled, voice FROM voice_settings WHERE id = 1").fetchone()
+            row = conn.execute(
+                "SELECT enabled, engine, neural_voice, voice FROM voice_settings WHERE id = 1"
+            ).fetchone()
         if row is None:
             return VoiceSettings()
-        return VoiceSettings(enabled=bool(row[0]), voice=_normalize_voice(row[1]))
+        return VoiceSettings(
+            enabled=bool(row[0]),
+            engine=_normalize_engine(row[1]),
+            neural_voice=_normalize_neural_voice(row[2]),
+            voice=_normalize_voice(row[3]),
+        )
 
     async def save_voice_settings(self, settings: VoiceSettings) -> None:
         if settings.voice not in _VOICE_IDS:
             raise ValueError("voice must be a supported voice profile")
+        if settings.engine not in _VOICE_ENGINES:
+            raise ValueError("engine must be a supported voice engine")
+        if settings.neural_voice not in _NEURAL_VOICE_IDS:
+            raise ValueError("neural_voice must be a supported neural voice profile")
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO voice_settings (id, enabled, voice) VALUES (1, ?, ?) "
-                "ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, voice = excluded.voice",
-                (int(settings.enabled), settings.voice),
+                "INSERT INTO voice_settings (id, enabled, engine, neural_voice, voice) "
+                "VALUES (1, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, "
+                "engine = excluded.engine, neural_voice = excluded.neural_voice, "
+                "voice = excluded.voice",
+                (int(settings.enabled), settings.engine, settings.neural_voice, settings.voice),
             )
 
 
 _VOICE_IDS = {
     "male_alex", "male_daniel", "male_eddy", "female_samantha", "female_ava", "female_karen"
 }
+_VOICE_ENGINES = {"neural", "system"}
+_NEURAL_VOICE_IDS = {
+    "male_ryan",
+    "male_joe",
+    "male_hfc",
+    "female_amy",
+    "female_lessac",
+    "female_hfc",
+}
+
+
+def _migrate_voice_settings(conn: sqlite3.Connection) -> None:
+    """Add the v0.3 engine preference without discarding existing choices."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(voice_settings)")}
+    if "engine" not in columns:
+        conn.execute("ALTER TABLE voice_settings ADD COLUMN engine TEXT NOT NULL DEFAULT 'neural'")
+    if "neural_voice" not in columns:
+        conn.execute(
+            "ALTER TABLE voice_settings ADD COLUMN neural_voice TEXT NOT NULL DEFAULT 'male_ryan'"
+        )
 
 
 def _normalize_voice(voice: str) -> str:
@@ -163,6 +200,14 @@ def _normalize_voice(voice: str) -> str:
     if voice == "female":
         return "female_samantha"
     return voice if voice in _VOICE_IDS else "male_alex"
+
+
+def _normalize_engine(engine: str) -> str:
+    return engine if engine in _VOICE_ENGINES else "neural"
+
+
+def _normalize_neural_voice(voice: str) -> str:
+    return voice if voice in _NEURAL_VOICE_IDS else "male_ryan"
 
 
 def _action_outcome(result: ToolResult) -> str:
