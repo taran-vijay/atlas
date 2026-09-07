@@ -22,7 +22,8 @@ from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.base import ActionRecord, SavedMemory, VoiceSettings
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
-from atlas.core.voice.macos_speaker import VOICE_OPTIONS, MacOSSpeaker, _speech_text
+from atlas.core.voice.macos_speaker import VOICE_OPTIONS, _speech_text
+from atlas.core.voice.piper_speaker import NEURAL_VOICE_OPTIONS, LocalVoiceSpeaker
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 
@@ -103,13 +104,18 @@ class DesktopConfirmationBridge:
 
 class AtlasDesktopApp:
     def __init__(
-        self, root: tk.Tk, assistant: HandlesMemory, name: str, voice_settings: VoiceSettings
+        self,
+        root: tk.Tk,
+        assistant: HandlesMemory,
+        name: str,
+        voice_settings: VoiceSettings,
+        neural_voice_models_dir: Path,
     ) -> None:
         self._root = root
         self._assistant = assistant
         self._name = name
         self._voice_settings = voice_settings
-        self._speaker = MacOSSpeaker()
+        self._speaker = LocalVoiceSpeaker(neural_voice_models_dir)
         self._spoken_rendered = ""
         self._busy = False
         self._field_state = "READY"
@@ -279,7 +285,7 @@ class AtlasDesktopApp:
     def _open_settings_window(self) -> None:
         window = tk.Toplevel(self._root)
         window.title("Atlas // Settings")
-        window.geometry("540x440")
+        window.geometry("620x735")
         window.configure(bg="#0b121c")
         tk.Label(window, text="⚙  SETTINGS", fg="#73e0d4", bg="#0b121c", font=("Helvetica", 16, "bold")).pack(anchor=tk.W, padx=22, pady=(22, 2))
         tk.Label(window, text="Configure how Atlas sounds and responds on this Mac.", fg="#91a6b8", bg="#0b121c", font=("Helvetica", 10)).pack(anchor=tk.W, padx=22, pady=(0, 14))
@@ -288,14 +294,45 @@ class AtlasDesktopApp:
         voice_tab = tk.Frame(tabs, bg="#101a26")
         tabs.add(voice_tab, text="  ◉  VOICE  ")
         voice_enabled = tk.BooleanVar(value=self._voice_settings.enabled)
+        voice_engine = tk.StringVar(value=self._voice_settings.engine)
+        neural_voice = tk.StringVar(value=self._voice_settings.neural_voice)
         voice_type = tk.StringVar(value=self._voice_settings.voice)
         tk.Checkbutton(voice_tab, text="READ ATLAS RESPONSES ALOUD", variable=voice_enabled, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=16, pady=(16, 10))
-        tk.Label(voice_tab, text="VOICE PROFILE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16)
+        tk.Label(voice_tab, text="VOICE ENGINE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16)
+        tk.Radiobutton(voice_tab, text="LOCAL NEURAL  ·  Piper voice model (recommended)", variable=voice_engine, value="neural", bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=16, pady=(3, 0))
+        tk.Label(voice_tab, text="More natural speech, synthesized and played entirely on this Mac.", fg="#91a6b8", bg="#101a26", font=("Helvetica", 9)).pack(anchor=tk.W, padx=38)
+        tk.Radiobutton(voice_tab, text="MACOS SYSTEM  ·  Built-in voice fallback", variable=voice_engine, value="system", bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, padx=16, pady=(6, 0))
+        tk.Label(voice_tab, text="Used automatically if the neural voice is not installed yet.", fg="#91a6b8", bg="#101a26", font=("Helvetica", 9)).pack(anchor=tk.W, padx=38)
+        neural_status = tk.Label(
+            voice_tab, fg="#f6c35c", bg="#101a26", font=("Helvetica", 9, "bold")
+        )
+        neural_status.pack(anchor=tk.W, padx=16, pady=(8, 0))
+        tk.Label(voice_tab, text="NEURAL VOICE PROFILE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16, pady=(8, 0))
+        for voice_id, (name, description, _) in NEURAL_VOICE_OPTIONS.items():
+            tk.Radiobutton(voice_tab, text=f"{name}  ·  {description}", variable=neural_voice, value=voice_id, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=1)
+        tk.Label(voice_tab, text="MACOS FALLBACK PROFILE", fg="#73e0d4", bg="#101a26", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=16, pady=(8, 0))
         for voice_id, (name, description, _, _) in VOICE_OPTIONS.items():
             tk.Radiobutton(voice_tab, text=f"{name}  ·  {description}", variable=voice_type, value=voice_id, bg="#101a26", fg="#e8f4fb", selectcolor="#101a26", activebackground="#101a26", activeforeground="#e8f4fb", font=("Helvetica", 10)).pack(anchor=tk.W, padx=16, pady=2)
 
+        def refresh_neural_status(*_: str) -> None:
+            if self._speaker.is_neural_voice_ready(neural_voice.get()):
+                neural_status.configure(text="Selected neural model installed and ready.", fg="#73e0d4")
+            else:
+                neural_status.configure(
+                    text="Selected neural model not installed — Atlas will use the macOS fallback.",
+                    fg="#f6c35c",
+                )
+
+        neural_voice.trace_add("write", refresh_neural_status)
+        refresh_neural_status()
+
         def selected_settings() -> VoiceSettings:
-            return VoiceSettings(enabled=voice_enabled.get(), voice=voice_type.get())
+            return VoiceSettings(
+                enabled=voice_enabled.get(),
+                engine=voice_engine.get(),
+                neural_voice=neural_voice.get(),
+                voice=voice_type.get(),
+            )
 
         def test_voice() -> None:
             threading.Thread(
@@ -496,7 +533,13 @@ class ConnectionScreen:
     def _launch(self, assistant: AssistantCore, voice_settings: VoiceSettings) -> None:
         self._window.destroy()
         self._root.deiconify()
-        AtlasDesktopApp(self._root, assistant, self._config.assistant_name, voice_settings)
+        AtlasDesktopApp(
+            self._root,
+            assistant,
+            self._config.assistant_name,
+            voice_settings,
+            self._config.neural_voice_models_dir,
+        )
 
 
 def main() -> None:

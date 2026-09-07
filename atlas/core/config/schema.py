@@ -49,6 +49,9 @@ class AtlasConfig(BaseSettings):
     memory_max_turns: int = 20
     memory_max_context_characters: int = Field(default=12_000, ge=1_000, le=100_000)
 
+    # Voice
+    neural_voice_models_dir: Path = Path.home() / ".atlas" / "voices"
+
     # Logging / audit
     log_level: LogLevel = LogLevel.INFO
     log_dir: Path = Path.home() / ".atlas" / "logs"
@@ -57,4 +60,5 @@ class AtlasConfig(BaseSettings):
     def ensure_directories(self) -> None:
         """Create local data directories if they don't already exist."""
         self.memory_db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.neural_voice_models_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)

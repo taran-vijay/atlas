@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 from atlas.core.memory.base import VoiceSettings
@@ -38,6 +39,36 @@ async def test_sqlite_store_persists_voice_settings(tmp_path: Path) -> None:
     store = SQLiteMemoryStore(tmp_path / "memory.db")
     assert await store.get_voice_settings() == VoiceSettings()
 
-    await store.save_voice_settings(VoiceSettings(enabled=False, voice="female_samantha"))
+    await store.save_voice_settings(
+        VoiceSettings(
+            enabled=False,
+            engine="system",
+            neural_voice="female_amy",
+            voice="female_samantha",
+        )
+    )
 
-    assert await store.get_voice_settings() == VoiceSettings(enabled=False, voice="female_samantha")
+    assert await store.get_voice_settings() == VoiceSettings(
+        enabled=False,
+        engine="system",
+        neural_voice="female_amy",
+        voice="female_samantha",
+    )
+
+
+async def test_sqlite_store_migrates_voice_settings_from_v02(tmp_path: Path) -> None:
+    db_path = tmp_path / "memory.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "CREATE TABLE voice_settings ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), enabled INTEGER NOT NULL, voice TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO voice_settings (id, enabled, voice) VALUES (1, 1, 'female_ava')"
+        )
+
+    store = SQLiteMemoryStore(db_path)
+
+    assert await store.get_voice_settings() == VoiceSettings(
+        enabled=True, engine="neural", neural_voice="male_ryan", voice="female_ava"
+    )
