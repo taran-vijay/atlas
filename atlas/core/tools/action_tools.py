@@ -283,7 +283,8 @@ class MoveToTrashTool(Tool):
 
     _FINDER_TRASH_SCRIPT = (
         "on run argv\n"
-        "tell application \"Finder\" to delete POSIX file (item 1 of argv)\n"
+        "set targetFile to (POSIX file (item 1 of argv)) as alias\n"
+        "tell application \"Finder\" to delete targetFile\n"
         "end run"
     )
 
@@ -326,7 +327,14 @@ class MoveToTrashTool(Tool):
         )
         await asyncio.wait_for(process.communicate(), timeout=10)
         if process.returncode != 0:
-            return ToolResult(False, "", error="Could not move the file to Trash.")
+            return ToolResult(
+                False,
+                "",
+                error=(
+                    "Could not move the file to Trash. macOS may need permission for "
+                    "Atlas or Terminal to control Finder."
+                ),
+            )
         return ToolResult(True, "Moved the file to Trash.", data={"path": str(resolved)})
 
 

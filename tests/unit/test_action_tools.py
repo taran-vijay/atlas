@@ -205,6 +205,7 @@ async def test_move_to_trash_uses_finder_with_path_as_separate_argument(tmp_path
     call = spawn.await_args
     assert call is not None
     assert call.args[:2] == ("osascript", "-e")
+    assert "as alias" in call.args[2]
     assert call.args[-2:] == ("--", str(path.resolve()))
 
 
