@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import platform
 import threading
 import tkinter as tk
@@ -29,6 +30,17 @@ from atlas.core.voice.piper_speaker import NEURAL_VOICE_OPTIONS, LocalVoiceSpeak
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 _STARTUP_ANNOUNCEMENT = "ATLAS — Adaptive Tactical Learning & Assistance System is now online."
 _INITIAL_GREETING = "Hello — I’m Atlas. What would you like to work on?"
+
+_MIDNIGHT = "#030817"
+_DEEP_BLUE = "#071126"
+_PANEL = "#0a1830"
+_PANEL_ALT = "#0d2140"
+_EDGE = "#1a4165"
+_CYAN = "#6ee7f2"
+_CYAN_DIM = "#2e96b2"
+_TEXT = "#ecf8ff"
+_MUTED = "#89a8c0"
+_GOLD = "#ffc766"
 
 
 class HandlesMessage(Protocol):
@@ -139,91 +151,186 @@ class AtlasDesktopApp:
         self._field_state = "READY"
         self._thinking = False
         self._thinking_frame = 0
+        self._core_phase = 0
         self._configure_window()
         self._build_interface()
 
     def _configure_window(self) -> None:
-        self._root.title(f"{self._name} // Local Core")
-        self._root.geometry("1120x740")
-        self._root.minsize(760, 520)
-        self._root.configure(bg="#070b12")
+        self._root.title(f"{self._name} // Adaptive Command Deck")
+        self._root.geometry("1280x800")
+        self._root.minsize(900, 620)
+        self._root.configure(bg=_MIDNIGHT)
 
     def _build_interface(self) -> None:
-        sidebar = tk.Frame(self._root, bg="#0c1420", width=250)
+        sidebar = tk.Frame(self._root, bg=_DEEP_BLUE, width=292)
         sidebar.pack(side=tk.LEFT, fill=tk.Y)
         sidebar.pack_propagate(False)
-        brand = tk.Frame(sidebar, bg="#0c1420")
-        brand.pack(anchor=tk.W, padx=24, pady=(30, 4))
-        self._top_dot = tk.Label(brand, text="◉", fg="#73e0d4", bg="#0c1420", font=("Helvetica", 19, "bold"))
+        brand = tk.Frame(sidebar, bg=_DEEP_BLUE)
+        brand.pack(anchor=tk.W, padx=26, pady=(28, 3))
+        self._top_dot = tk.Label(brand, text="◉", fg=_CYAN, bg=_DEEP_BLUE, font=("Helvetica", 19, "bold"))
         self._top_dot.pack(side=tk.LEFT)
-        tk.Label(brand, text="  ATLAS", fg="#73e0d4", bg="#0c1420", font=("Helvetica", 19, "bold")).pack(side=tk.LEFT)
-        tk.Label(sidebar, text="ORBITAL LOCAL INTELLIGENCE", fg="#7e90a6", bg="#0c1420", font=("Helvetica", 9, "bold")).pack(
-            anchor=tk.W, padx=25
+        tk.Label(brand, text="  ATLAS", fg=_TEXT, bg=_DEEP_BLUE, font=("Helvetica", 19, "bold")).pack(side=tk.LEFT)
+        tk.Label(sidebar, text="ADAPTIVE COMMAND SYSTEM", fg=_CYAN, bg=_DEEP_BLUE, font=("Helvetica", 8, "bold")).pack(
+            anchor=tk.W, padx=27
         )
-        core = tk.Canvas(sidebar, height=145, bg="#0c1420", highlightthickness=0)
-        core.pack(fill=tk.X, padx=24, pady=(22, 12))
-        for offset, color in ((8, "#183448"), (25, "#235469"), (43, "#397d85")):
-            core.create_oval(73 - offset, 72 - offset, 73 + offset, 72 + offset, outline=color, width=2)
-        core.create_oval(67, 66, 79, 78, fill="#f6b73c", outline="")
-        core.create_line(0, 72, 48, 72, fill="#2a5369")
-        core.create_line(98, 72, 150, 72, fill="#2a5369")
-        tk.Frame(sidebar, height=2, bg="#203043").pack(fill=tk.X, padx=24, pady=(0, 22))
-        tk.Label(sidebar, text="PRIVATE SESSION", fg="#7e90a6", bg="#0c1420", font=("Helvetica", 9, "bold")).pack(
-            anchor=tk.W, padx=25
+        self._core_canvas = tk.Canvas(sidebar, height=238, bg=_DEEP_BLUE, highlightthickness=0, cursor="hand2")
+        self._core_canvas.pack(fill=tk.X, padx=18, pady=(13, 8))
+        self._core_canvas.bind("<Button-1>", lambda _: self._open_settings_window())
+        tk.Label(sidebar, text="TAP CORE FOR VOICE SETTINGS", fg=_MUTED, bg=_DEEP_BLUE, font=("Helvetica", 8, "bold")).pack(
+            anchor=tk.CENTER
         )
-        tk.Label(sidebar, text="Encrypted by locality.\nNever leaves this Mac.", justify=tk.LEFT, fg="#dce9f3", bg="#0c1420", font=("Helvetica", 12)).pack(
-            anchor=tk.W, padx=25, pady=(7, 0)
+        tk.Frame(sidebar, height=1, bg=_EDGE).pack(fill=tk.X, padx=24, pady=(18, 18))
+        tk.Label(sidebar, text="SYSTEM NAVIGATION", fg=_MUTED, bg=_DEEP_BLUE, font=("Helvetica", 8, "bold")).pack(
+            anchor=tk.W, padx=27
         )
-        field = tk.Frame(sidebar, bg="#0a111b", highlightbackground="#2d7080", highlightthickness=1)
-        field.pack(fill=tk.X, padx=20, pady=(24, 0))
-        tk.Label(field, text="ATLAS FIELD // 01", fg="#73e0d4", bg="#0a111b", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=14, pady=(13, 3))
-        self._field_state_label = tk.Label(field, text="◈  READY", fg="#f6c35c", bg="#0a111b", font=("Helvetica", 13, "bold"))
+        self._navigation_button(sidebar, "◈  MEMORY ARCHIVE", self._open_memory_window).pack(
+            fill=tk.X, padx=22, pady=(8, 0)
+        )
+        self._navigation_button(sidebar, "◫  ACTION LEDGER", self._open_action_history).pack(
+            fill=tk.X, padx=22, pady=(7, 0)
+        )
+        self._navigation_button(sidebar, "◉  VOICE & SETTINGS", self._open_settings_window).pack(
+            fill=tk.X, padx=22, pady=(7, 0)
+        )
+        field = tk.Frame(sidebar, bg=_PANEL, highlightbackground=_EDGE, highlightthickness=1)
+        field.pack(side=tk.BOTTOM, fill=tk.X, padx=22, pady=23)
+        tk.Label(field, text="LOCAL FIELD STATUS", fg=_CYAN, bg=_PANEL, font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(13, 3))
+        self._field_state_label = tk.Label(field, text="◈  READY", fg=_GOLD, bg=_PANEL, font=("Helvetica", 13, "bold"))
         self._field_state_label.pack(anchor=tk.W, padx=14)
-        self._field_clock = tk.Label(field, text="", fg="#93a9bb", bg="#0a111b", font=("Helvetica", 9))
+        self._field_clock = tk.Label(field, text="", fg=_MUTED, bg=_PANEL, font=("Helvetica", 9))
         self._field_clock.pack(anchor=tk.W, padx=14, pady=(3, 1))
-        tk.Label(field, text="18 TOOLS  ·  LOCAL MEMORY", fg="#60768a", bg="#0a111b", font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
-        tk.Button(sidebar, text="REVIEW MEMORIES", command=self._open_memory_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(fill=tk.X, padx=20, pady=(14, 0))
-        tk.Button(sidebar, text="ACTION HISTORY", command=self._open_action_history, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=8).pack(fill=tk.X, padx=20, pady=(8, 0))
-        tk.Button(sidebar, text="SETTINGS", command=self._open_settings_window, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=8).pack(fill=tk.X, padx=20, pady=(8, 0))
-        device = tk.Frame(sidebar, bg="#08111c", highlightbackground="#24455b", highlightthickness=1)
-        device.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=24)
-        self._device_image: tk.PhotoImage | None
-        try:
-            self._device_image = tk.PhotoImage(file=str(_DEVICE_ASSET)).subsample(7, 7)
-        except tk.TclError:
-            self._device_image = None
-        if self._device_image is not None:
-            tk.Label(device, image=self._device_image, bg="#08111c").pack(pady=(10, 0))
-        tk.Label(device, text="MAC // LOCAL CORE", fg="#73e0d4", bg="#08111c", font=("Helvetica", 9, "bold")).pack(pady=(2, 0))
-        tk.Label(device, text="Private inference online", fg="#7890a3", bg="#08111c", font=("Helvetica", 9)).pack(pady=(2, 12))
+        tk.Label(field, text="18 TOOLS  ·  LOCAL MEMORY", fg="#527897", bg=_PANEL, font=("Helvetica", 8, "bold")).pack(anchor=tk.W, padx=14, pady=(0, 13))
 
-        content = tk.Frame(self._root, bg="#070b12")
-        content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(18, 24), pady=24)
-        header = tk.Frame(content, bg="#101923", highlightbackground="#24455b", highlightthickness=1)
-        header.pack(fill=tk.X)
-        tk.Label(header, text="ATLAS // COMMAND SURFACE", fg="#73e0d4", bg="#101923", font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=24, pady=(19, 2))
-        tk.Label(header, text="What are we solving?", fg="#edf7ff", bg="#101923", font=("Helvetica", 23, "bold")).pack(anchor=tk.W, padx=24)
-        tk.Label(header, text="Your Personal AI Assistant", fg="#9cb0c3", bg="#101923", font=("Helvetica", 11)).pack(anchor=tk.W, padx=24, pady=(2, 19))
+        content = tk.Frame(self._root, bg=_MIDNIGHT)
+        content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(2, 26), pady=22)
+        topbar = tk.Frame(content, bg=_DEEP_BLUE, highlightbackground=_EDGE, highlightthickness=1)
+        topbar.pack(fill=tk.X)
+        heading = tk.Frame(topbar, bg=_DEEP_BLUE)
+        heading.pack(side=tk.LEFT, padx=24, pady=17)
+        tk.Label(heading, text="ATLAS // ADAPTIVE OPERATIONS", fg=_CYAN, bg=_DEEP_BLUE, font=("Helvetica", 9, "bold")).pack(anchor=tk.W)
+        tk.Label(heading, text="What are we solving?", fg=_TEXT, bg=_DEEP_BLUE, font=("Helvetica", 24, "bold")).pack(anchor=tk.W, pady=(2, 0))
+        self._session_clock = tk.Label(topbar, text="", fg=_MUTED, bg=_DEEP_BLUE, font=("Helvetica", 9, "bold"))
+        self._session_clock.pack(side=tk.RIGHT, padx=22)
+        status_row = tk.Frame(content, bg=_MIDNIGHT)
+        status_row.pack(fill=tk.X, pady=(10, 10))
+        self._mode_indicator = self._status_chip(status_row, "●  LOCAL CORE ONLINE", _CYAN)
+        self._mode_indicator.pack(side=tk.LEFT)
+        self._status_chip(status_row, "◈  PRIVATE SESSION", _GOLD).pack(side=tk.LEFT, padx=8)
+        self._ghost_button(status_row, "VOICE SETTINGS", self._open_settings_window).pack(side=tk.RIGHT)
+        self._ghost_button(status_row, "MEMORY", self._open_memory_window).pack(side=tk.RIGHT, padx=(0, 8))
 
-        self._transcript = scrolledtext.ScrolledText(content, wrap=tk.WORD, state=tk.DISABLED, bg="#0e1620", fg="#e9edf2", insertbackground="#e9edf2", relief=tk.FLAT, padx=24, pady=20, font=("Helvetica", 12))
-        self._transcript.pack(fill=tk.BOTH, expand=True, pady=(1, 0))
-        self._transcript.tag_configure("atlas", foreground="#73e0d4", font=("Helvetica", 10, "bold"))
-        self._transcript.tag_configure("user", foreground="#f6c35c", font=("Helvetica", 10, "bold"))
+        transcript_shell = tk.Frame(content, bg=_PANEL, highlightbackground=_EDGE, highlightthickness=1)
+        transcript_shell.pack(fill=tk.BOTH, expand=True)
+        transcript_header = tk.Frame(transcript_shell, bg=_PANEL_ALT)
+        transcript_header.pack(fill=tk.X)
+        tk.Label(transcript_header, text="CONVERSATION STREAM", fg=_CYAN, bg=_PANEL_ALT, font=("Helvetica", 9, "bold")).pack(side=tk.LEFT, padx=17, pady=10)
+        tk.Label(transcript_header, text="LIVE LOCAL INFERENCE", fg=_MUTED, bg=_PANEL_ALT, font=("Helvetica", 8, "bold")).pack(side=tk.RIGHT, padx=17)
+        self._transcript = scrolledtext.ScrolledText(transcript_shell, wrap=tk.WORD, state=tk.DISABLED, bg=_PANEL, fg=_TEXT, insertbackground=_CYAN, relief=tk.FLAT, padx=26, pady=22, font=("Helvetica", 12), highlightthickness=0)
+        self._transcript.pack(fill=tk.BOTH, expand=True)
+        self._transcript.tag_configure("atlas", foreground=_CYAN, font=("Helvetica", 10, "bold"))
+        self._transcript.tag_configure("user", foreground=_GOLD, font=("Helvetica", 10, "bold"))
         self._append("Atlas", _INITIAL_GREETING)
 
-        composer = tk.Frame(content, bg="#101923", highlightbackground="#24455b", highlightthickness=1)
-        composer.pack(fill=tk.X, pady=(1, 0))
-        self._input = tk.Text(composer, height=3, wrap=tk.WORD, bg="#091019", fg="#e9edf2", insertbackground="#73e0d4", relief=tk.FLAT, padx=12, pady=10, font=("Helvetica", 12))
-        self._input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(14, 8), pady=14)
+        composer = tk.Frame(content, bg=_DEEP_BLUE, highlightbackground=_EDGE, highlightthickness=1)
+        composer.pack(fill=tk.X, pady=(10, 0))
+        composer_head = tk.Frame(composer, bg=_DEEP_BLUE)
+        composer_head.pack(fill=tk.X, padx=16, pady=(12, 0))
+        tk.Label(composer_head, text="COMMAND INPUT", fg=_CYAN, bg=_DEEP_BLUE, font=("Helvetica", 8, "bold")).pack(side=tk.LEFT)
+        self._input_status = tk.Label(composer_head, text="ENTER TO TRANSMIT", fg=_MUTED, bg=_DEEP_BLUE, font=("Helvetica", 8, "bold"))
+        self._input_status.pack(side=tk.RIGHT)
+        input_shell = tk.Frame(composer, bg="#020712", highlightbackground="#1f5878", highlightthickness=1)
+        input_shell.pack(fill=tk.X, padx=16, pady=(7, 15))
+        self._input = tk.Text(input_shell, height=3, wrap=tk.WORD, bg="#020712", fg=_TEXT, insertbackground=_CYAN, relief=tk.FLAT, padx=14, pady=11, font=("Helvetica", 12), highlightthickness=0)
+        self._input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._input.bind("<Return>", self._send_event)
         self._input.bind("<Command-Return>", self._send_event)
         self._input.bind("<Control-Return>", self._send_event)
-        self._send_button = tk.Button(composer, text="Transmit", command=self._send, bg="#73e0d4", fg="#061210", activebackground="#a4fff6", relief=tk.FLAT, font=("Helvetica", 11, "bold"), padx=22, pady=12)
-        self._send_button.pack(side=tk.RIGHT, padx=(0, 14), pady=14)
+        self._input.bind("<KeyRelease>", self._update_input_status)
+        self._send_button = tk.Button(input_shell, text="EXECUTE  ›", command=self._send, bg=_CYAN, fg="#031019", activebackground="#b5fbff", activeforeground="#031019", relief=tk.FLAT, bd=0, font=("Helvetica", 10, "bold"), padx=22, pady=12, cursor="hand2")
+        self._send_button.pack(side=tk.RIGHT, padx=10, pady=10)
         self._input.focus_set()
         self._refresh_field()
+        self._animate_core()
         if self._voice_settings.enabled:
             self._root.after(350, self._start_startup_voice)
+
+    @staticmethod
+    def _navigation_button(parent: tk.Misc, text: str, command: Callable[[], None]) -> tk.Button:
+        return tk.Button(
+            parent,
+            text=text,
+            command=command,
+            anchor=tk.W,
+            bg=_DEEP_BLUE,
+            fg=_TEXT,
+            activebackground=_PANEL_ALT,
+            activeforeground=_CYAN,
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground="#173c5a",
+            highlightcolor=_CYAN,
+            font=("Helvetica", 10, "bold"),
+            padx=15,
+            pady=11,
+            cursor="hand2",
+        )
+
+    @staticmethod
+    def _ghost_button(parent: tk.Misc, text: str, command: Callable[[], None]) -> tk.Button:
+        return tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=_MIDNIGHT,
+            fg=_TEXT,
+            activebackground=_PANEL_ALT,
+            activeforeground=_CYAN,
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground="#214c6a",
+            highlightcolor=_CYAN,
+            font=("Helvetica", 9, "bold"),
+            padx=12,
+            pady=7,
+            cursor="hand2",
+        )
+
+    @staticmethod
+    def _status_chip(parent: tk.Misc, text: str, color: str) -> tk.Label:
+        return tk.Label(parent, text=text, fg=color, bg=_PANEL_ALT, font=("Helvetica", 8, "bold"), padx=12, pady=7)
+
+    def _animate_core(self) -> None:
+        """Render a lightweight animated command core without external media."""
+        if not self._core_canvas.winfo_exists():
+            return
+        canvas = self._core_canvas
+        width = max(canvas.winfo_width(), 250)
+        height = max(canvas.winfo_height(), 238)
+        center_x, center_y = width / 2, height / 2
+        canvas.delete("all")
+        for x in range(0, width + 1, 24):
+            canvas.create_line(x, 0, x, height, fill="#091a32")
+        for y in range(0, height + 1, 24):
+            canvas.create_line(0, y, width, y, fill="#091a32")
+        for radius, color, width_line in ((76, "#123a5a", 1), (57, "#1a5775", 2), (34, _CYAN_DIM, 2)):
+            canvas.create_oval(center_x - radius, center_y - radius, center_x + radius, center_y + radius, outline=color, width=width_line)
+        for offset, color in ((0, _CYAN), (135, "#4c8eb7"), (245, _GOLD)):
+            start = (self._core_phase + offset) % 360
+            radius = 76 if offset == 0 else 57
+            canvas.create_arc(center_x - radius, center_y - radius, center_x + radius, center_y + radius, start=start, extent=68, style=tk.ARC, outline=color, width=3)
+        pulse = 10 + 3 * math.sin(self._core_phase / 12)
+        canvas.create_oval(center_x - pulse, center_y - pulse, center_x + pulse, center_y + pulse, fill=_CYAN, outline="")
+        canvas.create_oval(center_x - 4, center_y - 4, center_x + 4, center_y + 4, fill="#e7ffff", outline="")
+        for angle in range(0, 360, 45):
+            radians = math.radians(angle + self._core_phase / 5)
+            particle_x = center_x + math.cos(radians) * 96
+            particle_y = center_y + math.sin(radians) * 96
+            canvas.create_oval(particle_x - 2, particle_y - 2, particle_x + 2, particle_y + 2, fill="#3f88aa", outline="")
+        canvas.create_text(center_x, center_y + 116, text="ADAPTIVE TACTICAL CORE", fill=_MUTED, font=("Helvetica", 8, "bold"))
+        self._core_phase = (self._core_phase + 6) % 360
+        self._root.after(80, self._animate_core)
 
     def _start_startup_voice(self) -> None:
         threading.Thread(target=self._speak_startup_voice, daemon=True).start()
@@ -234,7 +341,14 @@ class AtlasDesktopApp:
     def _refresh_field(self) -> None:
         now = datetime.now().astimezone().strftime("LOCAL TIME  %H:%M:%S  %Z")
         self._field_clock.configure(text=now)
+        self._session_clock.configure(text=now)
         self._root.after(1_000, self._refresh_field)
+
+    def _update_input_status(self, _: tk.Event[tk.Misc] | None = None) -> None:
+        characters = len(self._input.get("1.0", "end-1c"))
+        self._input_status.configure(
+            text="ENTER TO TRANSMIT" if characters == 0 else f"SIGNAL BUFFER  ·  {characters} CHARS"
+        )
 
     def _open_memory_window(self) -> None:
         window = tk.Toplevel(self._root)
@@ -267,7 +381,7 @@ class AtlasDesktopApp:
             asyncio.run(self._assistant.clear_saved_memories())
             self._root.after(0, refresh)
 
-        tk.Button(window, text="CLEAR ALL MEMORIES", command=clear_all, bg="#3d2028", fg="#ffb5bc", activebackground="#642b36", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(anchor=tk.E, padx=22, pady=18)
+        tk.Button(window, text="CLEAR ALL MEMORIES", command=clear_all, bg="#2e1724", fg="#ffd5da", activebackground="#572638", activeforeground="#ffffff", relief=tk.FLAT, bd=0, highlightthickness=1, highlightbackground="#74384b", font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(anchor=tk.E, padx=22, pady=18)
         refresh()
 
     def _open_action_history(self) -> None:
@@ -305,7 +419,7 @@ class AtlasDesktopApp:
             asyncio.run(self._assistant.clear_action_history())
             self._root.after(0, refresh)
 
-        tk.Button(window, text="CLEAR ACTION HISTORY", command=clear_all, bg="#3d2028", fg="#ffb5bc", activebackground="#642b36", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(anchor=tk.E, padx=22, pady=18)
+        tk.Button(window, text="CLEAR ACTION HISTORY", command=clear_all, bg="#2e1724", fg="#ffd5da", activebackground="#572638", activeforeground="#ffffff", relief=tk.FLAT, bd=0, highlightthickness=1, highlightbackground="#74384b", font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(anchor=tk.E, padx=22, pady=18)
         refresh()
 
     def _open_settings_window(self) -> None:
@@ -378,25 +492,27 @@ class AtlasDesktopApp:
 
         buttons = tk.Frame(window, bg="#0b121c")
         buttons.pack(fill=tk.X, padx=22, pady=22)
-        tk.Button(buttons, text="TEST VOICE", command=test_voice, bg="#162536", fg="#73e0d4", activebackground="#23445a", activeforeground="#e7fffc", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(side=tk.LEFT)
-        tk.Button(buttons, text="SAVE SETTINGS", command=save, bg="#73e0d4", fg="#061210", activebackground="#a4fff6", relief=tk.FLAT, font=("Helvetica", 9, "bold"), padx=12, pady=9).pack(side=tk.RIGHT)
+        tk.Button(buttons, text="TEST VOICE", command=test_voice, bg=_PANEL_ALT, fg=_TEXT, activebackground="#1b4e70", activeforeground=_CYAN, relief=tk.FLAT, bd=0, highlightthickness=1, highlightbackground="#245676", font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(side=tk.LEFT)
+        tk.Button(buttons, text="SAVE SETTINGS", command=save, bg=_CYAN, fg="#031019", activebackground="#b5fbff", activeforeground="#031019", relief=tk.FLAT, bd=0, font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(side=tk.RIGHT)
 
     def _set_field_state(self, state: str) -> None:
         self._field_state = state
-        colors = {"READY": "#f6c35c", "PROCESSING": "#73e0d4"}
+        colors = {"READY": _GOLD, "PROCESSING": _CYAN}
         marker = "◈" if state == "READY" else "◌"
         self._field_state_label.configure(text=f"{marker}  {state}", fg=colors[state])
+        mode_text = "●  LOCAL CORE ONLINE" if state == "READY" else "◌  ANALYZING REQUEST"
+        self._mode_indicator.configure(text=mode_text, fg=colors[state])
         self._thinking = state == "PROCESSING"
         if self._thinking:
             self._animate_top_dot()
         else:
-            self._top_dot.configure(text="◉", fg="#73e0d4")
+            self._top_dot.configure(text="◉", fg=_CYAN)
 
     def _animate_top_dot(self) -> None:
         if not self._thinking:
             return
         frames = ("◔", "◑", "◕", "◒")
-        self._top_dot.configure(text=frames[self._thinking_frame % len(frames)], fg="#f6c35c")
+        self._top_dot.configure(text=frames[self._thinking_frame % len(frames)], fg=_GOLD)
         self._thinking_frame += 1
         self._root.after(120, self._animate_top_dot)
 
@@ -419,10 +535,11 @@ class AtlasDesktopApp:
         if not message:
             return
         self._input.delete("1.0", tk.END)
+        self._update_input_status()
         self._append("You", message)
         self._busy = True
         self._set_field_state("PROCESSING")
-        self._send_button.configure(state=tk.DISABLED, text="Thinking…")
+        self._send_button.configure(state=tk.DISABLED, text="ANALYZING…")
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
 
     def _reply(self, message: str) -> None:
@@ -442,7 +559,7 @@ class AtlasDesktopApp:
             self._append(self._name, reply)
         self._busy = False
         self._set_field_state("READY")
-        self._send_button.configure(state=tk.NORMAL, text="Send")
+        self._send_button.configure(state=tk.NORMAL, text="EXECUTE  ›")
         self._input.focus_set()
 
     def _begin_spoken_reply(self) -> None:
@@ -485,7 +602,7 @@ async def _create_assistant(
 
 
 class ConnectionScreen:
-    """macOS-friendly launch surface that stays responsive during the Ollama check."""
+    """Animated local-core boot screen that stays responsive during the Ollama check."""
 
     def __init__(self, root: tk.Tk, config: AtlasConfig) -> None:
         self._root = root
@@ -493,27 +610,28 @@ class ConnectionScreen:
         self._confirmation = DesktopConfirmationBridge(root)
         self._window = tk.Toplevel(root)
         self._window.overrideredirect(True)
-        self._window.configure(bg="#070b12")
-        self._window.geometry("500x330")
+        self._window.configure(bg=_MIDNIGHT)
+        self._window.geometry("600x430")
         self._window.update_idletasks()
-        x = (self._window.winfo_screenwidth() - 500) // 2
-        y = (self._window.winfo_screenheight() - 330) // 2
-        self._window.geometry(f"500x330+{x}+{y}")
+        x = (self._window.winfo_screenwidth() - 600) // 2
+        y = (self._window.winfo_screenheight() - 430) // 2
+        self._window.geometry(f"600x430+{x}+{y}")
         self._phase = 0
         self._build()
 
     def _build(self) -> None:
-        frame = tk.Frame(self._window, bg="#070b12", highlightbackground="#24455b", highlightthickness=1)
+        frame = tk.Frame(self._window, bg=_MIDNIGHT, highlightbackground=_EDGE, highlightthickness=1)
         frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-        self._radar = tk.Canvas(frame, height=145, bg="#070b12", highlightthickness=0)
-        self._radar.pack(fill=tk.X, pady=(30, 0))
-        tk.Label(frame, text="ATLAS", fg="#eaf7ff", bg="#070b12", font=("Helvetica", 25, "bold")).pack()
-        tk.Label(frame, text="LOCAL CORE INITIALIZATION", fg="#73e0d4", bg="#070b12", font=("Helvetica", 9, "bold")).pack(pady=(2, 12))
-        self._status = tk.Label(frame, text="Checking local inference connection…", fg="#a7b7c8", bg="#070b12", font=("Helvetica", 12))
+        tk.Label(frame, text="ATLAS // INITIALIZING", fg=_CYAN, bg=_MIDNIGHT, font=("Helvetica", 9, "bold")).pack(anchor=tk.W, padx=28, pady=(24, 0))
+        self._radar = tk.Canvas(frame, height=195, bg=_MIDNIGHT, highlightthickness=0)
+        self._radar.pack(fill=tk.X, pady=(3, 0))
+        tk.Label(frame, text="ADAPTIVE TACTICAL CORE", fg=_TEXT, bg=_MIDNIGHT, font=("Helvetica", 23, "bold")).pack()
+        tk.Label(frame, text="LOCAL INFERENCE LINK", fg=_MUTED, bg=_MIDNIGHT, font=("Helvetica", 9, "bold")).pack(pady=(3, 14))
+        self._status = tk.Label(frame, text="Checking local inference connection…", fg=_TEXT, bg=_MIDNIGHT, font=("Helvetica", 12, "bold"))
         self._status.pack()
-        self._detail = tk.Label(frame, text="Ollama / macOS local mode", fg="#64768a", bg="#070b12", font=("Helvetica", 10))
+        self._detail = tk.Label(frame, text="OLLAMA  ·  macOS  ·  PRIVATE SESSION", fg=_MUTED, bg=_MIDNIGHT, font=("Helvetica", 9, "bold"))
         self._detail.pack(pady=(5, 0))
-        self._retry = tk.Button(frame, text="Retry connection", command=self.start_check, bg="#73e0d4", fg="#061210", relief=tk.FLAT, font=("Helvetica", 10, "bold"))
+        self._retry = tk.Button(frame, text="RETRY CONNECTION", command=self.start_check, bg=_CYAN, fg="#031019", activebackground="#b5fbff", relief=tk.FLAT, bd=0, font=("Helvetica", 9, "bold"), padx=14, pady=8, cursor="hand2")
         self._animate()
         self.start_check()
 
@@ -521,20 +639,27 @@ class ConnectionScreen:
         if not self._window.winfo_exists():
             return
         self._radar.delete("all")
-        center_x, center_y = 250, 72
-        for radius, color in ((18, "#1d4e64"), (36, "#235a70"), (56, "#2f7884")):
-            self._radar.create_oval(center_x - radius, center_y - radius, center_x + radius, center_y + radius, outline=color, width=2)
-        angle = self._phase % 120
-        end_x = center_x + 55 * ((angle - 60) / 60)
-        self._radar.create_line(center_x, center_y, end_x, center_y - 36, fill="#73e0d4", width=2)
-        self._radar.create_oval(center_x - 7, center_y - 7, center_x + 7, center_y + 7, fill="#f6c35c", outline="")
+        width = max(self._radar.winfo_width(), 600)
+        center_x, center_y = width / 2, 96
+        for x in range(0, width + 1, 30):
+            self._radar.create_line(x, 0, x, 195, fill="#081a31")
+        for y in range(0, 196, 30):
+            self._radar.create_line(0, y, width, y, fill="#081a31")
+        for radius, color, line_width in ((78, "#123a5a", 1), (58, "#1c607c", 2), (34, _CYAN_DIM, 2)):
+            self._radar.create_oval(center_x - radius, center_y - radius, center_x + radius, center_y + radius, outline=color, width=line_width)
+        for offset, color in ((0, _CYAN), (120, "#568caf"), (240, _GOLD)):
+            radius = 78 if offset == 0 else 58
+            self._radar.create_arc(center_x - radius, center_y - radius, center_x + radius, center_y + radius, start=(self._phase + offset) % 360, extent=74, style=tk.ARC, outline=color, width=3)
+        pulse = 9 + 3 * math.sin(self._phase / 12)
+        self._radar.create_oval(center_x - pulse, center_y - pulse, center_x + pulse, center_y + pulse, fill=_CYAN, outline="")
+        self._radar.create_text(center_x, center_y + 116, text="ESTABLISHING LOCAL LINK", fill=_MUTED, font=("Helvetica", 8, "bold"))
         self._phase += 8
         self._window.after(80, self._animate)
 
     def start_check(self) -> None:
         self._retry.pack_forget()
-        self._status.configure(text="Checking local inference connection…", fg="#a7b7c8")
-        self._detail.configure(text=f"Ollama / {platform.system()} local mode")
+        self._status.configure(text="Checking local inference connection…", fg=_TEXT)
+        self._detail.configure(text=f"OLLAMA  ·  {platform.system().upper()}  ·  PRIVATE SESSION")
         threading.Thread(target=self._connect, daemon=True).start()
 
     def _connect(self) -> None:
@@ -547,12 +672,12 @@ class ConnectionScreen:
         self._root.after(0, self._ready, assistant, voice_settings)
 
     def _ready(self, assistant: AssistantCore, voice_settings: VoiceSettings) -> None:
-        self._status.configure(text="Local core verified", fg="#73e0d4")
-        self._detail.configure(text="Ollama is online · launching command surface")
+        self._status.configure(text="Local core verified", fg=_CYAN)
+        self._detail.configure(text="OLLAMA ONLINE  ·  LAUNCHING COMMAND DECK")
         self._window.after(650, lambda: self._launch(assistant, voice_settings))
 
     def _failed(self, error: str) -> None:
-        self._status.configure(text="Connection unavailable", fg="#f6c35c")
+        self._status.configure(text="Connection unavailable", fg=_GOLD)
         self._detail.configure(text=error)
         self._retry.pack(pady=(16, 0))
 
