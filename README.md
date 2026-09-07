@@ -1,4 +1,4 @@
-# Atlas
+# A.T.L.A.S - Adaptive Learning and Technical System
 
 A local-first, privacy-focused, voice-controlled personal AI assistant.
 
