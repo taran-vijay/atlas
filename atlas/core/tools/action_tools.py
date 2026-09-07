@@ -172,6 +172,97 @@ class CreateTextFileTool(Tool):
         )
 
 
+class CreateFolderTool(Tool):
+    """Create one new folder without creating parents or overwriting data."""
+
+    def __init__(self) -> None:
+        self.name = "filesystem.create_folder"
+        self.description = (
+            "Create one new local folder at an exact path after the user confirms. "
+            "Never creates parent folders or replaces existing files or folders."
+        )
+        self.parameters = {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "New folder path."}},
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.CONFIRM
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        path = arguments.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("'path' must be a non-empty string")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        path = Path(arguments["path"]).expanduser()
+        if path.is_symlink() or path.parent.is_symlink():
+            return ToolResult(False, "", error="Refusing to create a folder through a symlink.")
+        if path.exists():
+            return ToolResult(False, "", error=f"Path already exists: {path}")
+        if not path.parent.is_dir():
+            return ToolResult(False, "", error=f"Parent directory does not exist: {path.parent}")
+        try:
+            resolved = await asyncio.to_thread(_create_new_folder, path)
+        except FileExistsError:
+            return ToolResult(False, "", error=f"Path already exists: {path}")
+        except OSError:
+            return ToolResult(False, "", error="Could not create the folder safely.")
+        return ToolResult(True, "Created the folder.", data={"path": str(resolved)})
+
+
+class CopyFileTool(Tool):
+    """Copy one regular file to a fresh path without replacing data."""
+
+    def __init__(self) -> None:
+        self.name = "filesystem.copy_file"
+        self.description = (
+            "Copy one existing regular file to a new local path after the user confirms. "
+            "Never replaces an existing destination or copies directories or symlinks."
+        )
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Existing file to copy."},
+                "destination": {"type": "string", "description": "New file path."},
+            },
+            "required": ["source", "destination"],
+            "additionalProperties": False,
+        }
+        self.permission = PermissionLevel.CONFIRM
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
+        for name in ("source", "destination"):
+            value = arguments.get(name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"'{name}' must be a non-empty string")
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        source = Path(arguments["source"]).expanduser()
+        destination = Path(arguments["destination"]).expanduser()
+        if source.is_symlink() or destination.is_symlink() or destination.parent.is_symlink():
+            return ToolResult(False, "", error="Refusing to copy a file through a symlink.")
+        if not source.is_file():
+            return ToolResult(False, "", error=f"Source is not a regular file: {source}")
+        if destination.exists():
+            return ToolResult(False, "", error=f"Destination already exists: {destination}")
+        if not destination.parent.is_dir():
+            return ToolResult(False, "", error=f"Destination directory does not exist: {destination.parent}")
+        try:
+            resolved_source, resolved_destination = await asyncio.to_thread(
+                _copy_file_without_replacing, source, destination
+            )
+        except FileExistsError:
+            return ToolResult(False, "", error=f"Destination already exists: {destination}")
+        except OSError:
+            return ToolResult(False, "", error="Could not copy the file safely.")
+        return ToolResult(
+            True,
+            "Copied the file.",
+            data={"source": str(resolved_source), "destination": str(resolved_destination)},
+        )
+
+
 class MoveFileTool(Tool):
     """Move one regular file without allowing destination replacement."""
 
@@ -358,8 +449,13 @@ def _create_new_text_file(path: Path, text: str) -> Path:
     return path.resolve()
 
 
-def _move_file_without_replacing(source: Path, destination: Path) -> tuple[Path, Path]:
-    """Copy using exclusive creation, then remove the source only after success."""
+def _create_new_folder(path: Path) -> Path:
+    os.mkdir(path, 0o700)
+    return path.resolve()
+
+
+def _copy_file_without_replacing(source: Path, destination: Path) -> tuple[Path, Path]:
+    """Copy with exclusive creation, preserving the source on every failure path."""
     descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with source.open("rb") as input_file, os.fdopen(descriptor, "wb") as output_file:
@@ -369,5 +465,11 @@ def _move_file_without_replacing(source: Path, destination: Path) -> tuple[Path,
     except BaseException:
         destination.unlink(missing_ok=True)
         raise
-    source.unlink()
     return source.resolve(), destination.resolve()
+
+
+def _move_file_without_replacing(source: Path, destination: Path) -> tuple[Path, Path]:
+    """Copy using exclusive creation, then remove the source only after success."""
+    resolved_source, resolved_destination = _copy_file_without_replacing(source, destination)
+    source.unlink()
+    return resolved_source, resolved_destination

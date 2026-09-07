@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from atlas.core.tools.action_tools import (
+    CopyFileTool,
     CopyToClipboardTool,
+    CreateFolderTool,
     CreateTextFileTool,
     MoveFileTool,
     MoveToTrashTool,
@@ -123,6 +125,52 @@ async def test_create_text_file_does_not_overwrite_existing_file(tmp_path: Path)
     assert result.success is False
     assert "already exists" in (result.error or "")
     assert path.read_text(encoding="utf-8") == "original"
+
+
+async def test_create_folder_creates_only_the_requested_new_folder(tmp_path: Path) -> None:
+    path = tmp_path / "atlas-notes"
+
+    result = await CreateFolderTool().execute({"path": str(path)})
+
+    assert result.success is True
+    assert path.is_dir()
+    assert result.data == {"path": str(path.resolve())}
+
+
+async def test_create_folder_does_not_replace_existing_path(tmp_path: Path) -> None:
+    path = tmp_path / "existing.txt"
+    path.write_text("do not replace", encoding="utf-8")
+
+    result = await CreateFolderTool().execute({"path": str(path)})
+
+    assert result.success is False
+    assert "already exists" in (result.error or "")
+    assert path.read_text(encoding="utf-8") == "do not replace"
+
+
+async def test_copy_file_copies_to_a_fresh_destination(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    destination = tmp_path / "copy.txt"
+    source.write_text("Atlas source", encoding="utf-8")
+
+    result = await CopyFileTool().execute({"source": str(source), "destination": str(destination)})
+
+    assert result.success is True
+    assert source.read_text(encoding="utf-8") == "Atlas source"
+    assert destination.read_text(encoding="utf-8") == "Atlas source"
+
+
+async def test_copy_file_never_replaces_existing_destination(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    destination = tmp_path / "copy.txt"
+    source.write_text("source", encoding="utf-8")
+    destination.write_text("original", encoding="utf-8")
+
+    result = await CopyFileTool().execute({"source": str(source), "destination": str(destination)})
+
+    assert result.success is False
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "original"
 
 
 async def test_move_file_moves_to_new_path_without_replacing(tmp_path: Path) -> None:

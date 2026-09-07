@@ -104,3 +104,20 @@ async def test_privileged_tool_respects_declined_confirmation() -> None:
     result = await registry.dispatch("delete_everything", {"text": "x"})
     assert result.success is False
     assert result.error == "User declined confirmation"
+
+
+async def test_confirmation_gated_actions_are_audited_after_execution() -> None:
+    recorded: list[tuple[str, dict[str, Any], ToolResult]] = []
+
+    async def allow(name: str, args: dict[str, Any]) -> bool:
+        return True
+
+    async def audit(name: str, args: dict[str, Any], result: ToolResult) -> None:
+        recorded.append((name, args, result))
+
+    registry = ToolRegistry(confirm=allow, audit=audit)
+    registry.register(_DeleteTool())
+    result = await registry.dispatch("delete_everything", {"text": "x"})
+
+    assert result.success is True
+    assert recorded == [("delete_everything", {"text": "x"}, result)]

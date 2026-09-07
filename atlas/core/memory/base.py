@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
+
+from atlas.core.tools.base import ToolResult
 
 
 @dataclass
@@ -22,6 +25,15 @@ class SavedMemory:
     id: int
     content: str
     created_at: float
+
+
+@dataclass
+class ActionRecord:
+    id: int
+    tool_name: str
+    summary: str
+    outcome: str
+    timestamp: float
 
 
 class MemoryStore(ABC):
@@ -52,3 +64,17 @@ class MemoryStore(ABC):
     @abstractmethod
     async def clear_memories(self) -> None:
         """Delete every saved long-term memory while preserving conversation history."""
+
+    @abstractmethod
+    async def record_action(
+        self, tool_name: str, arguments: dict[str, Any], result: ToolResult
+    ) -> None:
+        """Persist a privacy-preserving record of a confirmation-gated action."""
+
+    @abstractmethod
+    async def recent_actions(self, limit: int = 50) -> list[ActionRecord]:
+        """Return the newest recorded action outcomes first."""
+
+    @abstractmethod
+    async def clear_actions(self) -> None:
+        """Delete action history without changing conversation or saved memories."""

@@ -10,7 +10,9 @@ from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.action_tools import (
+    CopyFileTool,
     CopyToClipboardTool,
+    CreateFolderTool,
     CreateTextFileTool,
     MoveFileTool,
     MoveToTrashTool,
@@ -18,7 +20,7 @@ from atlas.core.tools.action_tools import (
     OpenFileTool,
     RenameFileTool,
 )
-from atlas.core.tools.registry import ConfirmationCallback, ToolRegistry
+from atlas.core.tools.registry import ActionAuditCallback, ConfirmationCallback, ToolRegistry
 from atlas.core.tools.system_tools import (
     GetBatteryTool,
     GetFileMetadataTool,
@@ -44,8 +46,10 @@ def _configure_logging(config: AtlasConfig) -> None:
     )
 
 
-def _build_tool_registry(*, confirm: ConfirmationCallback | None = None) -> ToolRegistry:
-    tools = ToolRegistry(confirm=confirm)
+def _build_tool_registry(
+    *, confirm: ConfirmationCallback | None = None, audit: ActionAuditCallback | None = None
+) -> ToolRegistry:
+    tools = ToolRegistry(confirm=confirm, audit=audit)
     tools.register(GetTimeTool())
     tools.register(GetSystemInfoTool())
     tools.register(ListDirectoryTool())
@@ -59,6 +63,8 @@ def _build_tool_registry(*, confirm: ConfirmationCallback | None = None) -> Tool
     tools.register(OpenFileTool())
     tools.register(CopyToClipboardTool())
     tools.register(CreateTextFileTool())
+    tools.register(CreateFolderTool())
+    tools.register(CopyFileTool())
     tools.register(MoveFileTool())
     tools.register(RenameFileTool())
     tools.register(MoveToTrashTool())
@@ -84,7 +90,7 @@ async def _run(config: AtlasConfig) -> None:
         raise SystemExit(1)
 
     memory = SQLiteMemoryStore(config.memory_db_path)
-    tools = _build_tool_registry()
+    tools = _build_tool_registry(audit=memory.record_action)
     assistant = AssistantCore(
         assistant_name=config.assistant_name,
         llm=llm,

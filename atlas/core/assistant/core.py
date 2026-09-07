@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import MemoryStore, SavedMemory
+from atlas.core.memory.base import ActionRecord, MemoryStore, SavedMemory
 from atlas.core.tools.base import ToolResult
 from atlas.core.tools.registry import ToolRegistry
 
@@ -71,8 +71,11 @@ _TOOL_REQUEST_TERMS = (
     "clipboard",
     "create a note",
     "create a file",
+    "create a folder",
     "save a note",
     "move ",
+    "copy file",
+    "duplicate file",
     "rename ",
     "trash",
     "delete file",
@@ -234,6 +237,14 @@ class AssistantCore:
     async def clear_saved_memories(self) -> None:
         """Clear explicit memories without deleting the conversation transcript."""
         await self._memory.clear_memories()
+
+    async def list_recent_actions(self) -> list[ActionRecord]:
+        """Expose local confirmation-gated action outcomes to the desktop interface."""
+        return await self._memory.recent_actions()
+
+    async def clear_action_history(self) -> None:
+        """Clear action history without affecting saved memory or conversation."""
+        await self._memory.clear_actions()
 
     async def _handle_memory_command(self, user_input: str) -> str | None:
         normalized = user_input.strip()
