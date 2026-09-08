@@ -19,6 +19,11 @@
 - [x] **Quality-of-Life v0.1.** Preloaded fast-response model, disabled
   thinking for everyday chat, rapid local transcription, fixed voice cues,
   and safe correction of unambiguous transcript slips.
+- [x] **Quality-of-Life v0.3.** Toggle recording control, local wake phrase,
+  selected-voice acknowledgement only for slow voice requests, and clearer
+  handling of unintelligible transcription.
+- [x] **Quality-of-Life v0.4.** Always-listening local “Hey Atlas” wake
+  listener alongside the manual recording control.
 
 ## Next
 

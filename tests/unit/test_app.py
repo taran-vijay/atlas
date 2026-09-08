@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock
 
 from atlas.app import (
     _DEVICE_ASSET,
-    _INITIAL_GREETING,
     _STARTUP_ANNOUNCEMENT,
     AtlasDesktopApp,
     ConnectionScreen,
@@ -32,10 +31,10 @@ def test_desktop_app_includes_device_status_visual() -> None:
     assert _DEVICE_ASSET.is_file()
 
 
-async def test_startup_voice_announces_online_then_the_visible_greeting() -> None:
+async def test_startup_voice_announces_online_without_a_repeated_greeting() -> None:
     speaker = AsyncMock()
 
     await _speak_startup_sequence(speaker, VoiceSettings())
 
     assert speaker.speak.await_args_list[0].args == (_STARTUP_ANNOUNCEMENT, VoiceSettings())
-    assert speaker.speak.await_args_list[1].args == (_INITIAL_GREETING, VoiceSettings())
+    assert speaker.speak.await_count == 1
