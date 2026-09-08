@@ -14,11 +14,14 @@
   memories, and a local action history.
 - [x] **Voice output v0.3.** Configurable macOS speech, optional local Piper
   neural voices, synchronized reply text, and a startup announcement.
+- [x] **Voice input v0.1.** Optional local hold-to-talk recording and
+  whisper.cpp transcription; no wake word or background microphone access.
 
 ## Next
 
-- [ ] **Voice input.** On-device wake word detection and speech-to-text, with
-  microphone permission requested only when the user enables it.
+- [ ] **Voice input v0.2.** Optional wake-word detection and refined
+  transcription controls, with microphone permission requested only when the
+  user enables it.
 - [ ] **Service integrations.** Calendar, Reminders, Mail, notifications, and
   other integrations with explicit scopes and capability-aware replies.
 - [ ] **Desktop refinement.** Better settings, update handling, packaging, and

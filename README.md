@@ -5,9 +5,9 @@ model through Ollama, keeps its memories and logs on your Mac, and only acts
 through explicitly scoped, permission-gated tools.
 
 > **Status: local macOS desktop assistant.** Atlas has a native desktop app,
-> local memory, system/file tools, confirmation-gated actions, and optional
-> on-device voice output. Voice input and integrations such as Calendar and
-> Mail are not implemented yet.
+> local memory, system/file tools, confirmation-gated actions, optional
+> on-device voice output, and optional local push-to-talk voice input.
+> Calendar and Mail are not implemented yet.
 
 ## What Atlas can do
 
@@ -24,6 +24,7 @@ through explicitly scoped, permission-gated tools.
 - Keep an action history and distinguish verified results from unavailable data
 - Read replies aloud with a built-in macOS voice or optional local Piper
   neural voices, while keeping the visible transcript paced with speech
+- Turn speech into text locally with an optional hold-to-talk control
 
 Atlas cannot yet read Calendar, Mail, Messages, reminders, browser data, or
 other connected services. It says so directly instead of inventing results.
@@ -83,6 +84,23 @@ The models and generated audio stay on your Mac. Set
 `ATLAS_NEURAL_VOICE_MODELS_DIR` in `.env` to use a different compatible Piper
 model directory.
 
+## Voice input (optional)
+
+Atlas can transcribe speech locally while you hold **HOLD TO TALK** in the
+desktop app. Install the local engine and speech model once:
+
+```bash
+./scripts/setup_voice_input.sh
+```
+
+This setup uses Homebrew to install whisper.cpp, then downloads the local
+English speech model.
+
+The first use asks macOS for microphone permission. Recording starts only
+while the control is held, stops when released, and is transcribed on-device.
+Atlas never keeps listening in the background and does not send audio to a
+remote service.
+
 ## Configuration
 
 Configuration lives in `.env` or environment variables beginning with
@@ -107,14 +125,13 @@ the selected model and your Mac.
 
 Atlas never bypasses macOS permission prompts. Read-only system tools need no
 special permission, while every local action requires an in-app confirmation.
-Calendar, Mail, notifications, microphone access, and voice input are not
-implemented yet. Details are in [macOS permissions](docs/permissions.md).
+Calendar, Mail, and notifications are not implemented yet. Details are in
+[macOS permissions](docs/permissions.md).
 
 ## Project direction
 
-The next major layer is local voice input—wake word detection and
-speech-to-text—followed by carefully scoped service integrations. See the
-[roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
+The next major layer is carefully scoped service integrations, beginning with
+Calendar. See the [roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
 
 ## Development checks
 

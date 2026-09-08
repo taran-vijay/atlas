@@ -26,6 +26,7 @@ from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
 from atlas.core.voice.macos_speaker import VOICE_OPTIONS, _speech_text
 from atlas.core.voice.piper_speaker import NEURAL_VOICE_OPTIONS, LocalVoiceSpeaker
+from atlas.core.voice.whisper_input import PushToTalkRecorder, VoiceInputError, WhisperCppRecognizer
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 _STARTUP_ANNOUNCEMENT = "ATLAS — Adaptive Tactical Learning & Assistance System is now online."
@@ -144,12 +145,15 @@ class AtlasDesktopApp:
         name: str,
         voice_settings: VoiceSettings,
         neural_voice_models_dir: Path,
+        voice_input_models_dir: Path,
     ) -> None:
         self._root = root
         self._assistant = assistant
         self._name = name
         self._voice_settings = voice_settings
         self._speaker = LocalVoiceSpeaker(neural_voice_models_dir)
+        self._voice_input = PushToTalkRecorder(WhisperCppRecognizer(voice_input_models_dir))
+        self._recording = False
         self._spoken_rendered = ""
         self._busy = False
         self._field_state = "READY"
@@ -267,6 +271,21 @@ class AtlasDesktopApp:
             font=("Helvetica", 10, "bold"),
         )
         self._send_button.pack(side=tk.RIGHT, padx=10, pady=10)
+        self._mic_button = tk.Label(
+            input_shell,
+            text="HOLD TO TALK",
+            bg="#0d2943",
+            fg=_TEXT,
+            font=("Helvetica", 9, "bold"),
+            padx=14,
+            pady=12,
+            cursor="hand2",
+            highlightthickness=1,
+            highlightbackground="#214d6c",
+        )
+        self._mic_button.pack(side=tk.RIGHT, padx=(0, 2), pady=10)
+        self._mic_button.bind("<ButtonPress-1>", self._start_recording)
+        self._mic_button.bind("<ButtonRelease-1>", self._stop_recording)
         self._input.focus_set()
         self._refresh_field()
         self._animate_core()
@@ -637,6 +656,48 @@ class AtlasDesktopApp:
         self._send()
         return "break"
 
+    def _start_recording(self, _: tk.Event[tk.Misc]) -> None:
+        if self._busy or self._recording:
+            return
+        try:
+            self._voice_input.start()
+        except VoiceInputError as exc:
+            self._input_status.configure(text="VOICE INPUT SETUP REQUIRED")
+            messagebox.showinfo("Voice input", str(exc), parent=self._root)
+            return
+        self._recording = True
+        self._mic_button.configure(text="RECORDING… RELEASE", bg="#5a283b", fg="#ffffff")
+        self._input_status.configure(text="LISTENING LOCALLY… RELEASE TO TRANSCRIBE")
+
+    def _stop_recording(self, _: tk.Event[tk.Misc]) -> None:
+        if not self._recording:
+            return
+        self._recording = False
+        self._mic_button.configure(text="TRANSCRIBING…", bg="#124764")
+        threading.Thread(target=self._transcribe_recording, daemon=True).start()
+
+    def _transcribe_recording(self) -> None:
+        try:
+            transcript = asyncio.run(self._voice_input.stop_and_transcribe())
+        except VoiceInputError as exc:
+            self._root.after(0, self._voice_input_failed, str(exc))
+            return
+        self._root.after(0, self._voice_input_ready, transcript)
+
+    def _voice_input_ready(self, transcript: str) -> None:
+        self._mic_button.configure(text="HOLD TO TALK", bg="#0d2943", fg=_TEXT)
+        if transcript:
+            self._input.insert(tk.END, transcript + " ")
+            self._update_input_status()
+        else:
+            self._input_status.configure(text="NO SPEECH DETECTED")
+        self._input.focus_set()
+
+    def _voice_input_failed(self, error: str) -> None:
+        self._mic_button.configure(text="HOLD TO TALK", bg="#0d2943", fg=_TEXT)
+        self._input_status.configure(text="VOICE INPUT UNAVAILABLE")
+        messagebox.showerror("Voice input", error, parent=self._root)
+
     def _send(self) -> None:
         if self._busy:
             return
@@ -802,6 +863,7 @@ class ConnectionScreen:
             self._config.assistant_name,
             voice_settings,
             self._config.neural_voice_models_dir,
+            self._config.voice_input_models_dir,
         )
 
 
