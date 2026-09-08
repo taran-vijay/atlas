@@ -22,9 +22,16 @@ def test_desktop_module_exposes_connection_verified_boot_screen() -> None:
 def test_desktop_app_exposes_live_atlas_field_updates() -> None:
     assert hasattr(AtlasDesktopApp, "_refresh_field")
     assert hasattr(AtlasDesktopApp, "_set_field_state")
-    assert hasattr(AtlasDesktopApp, "_animate_top_dot")
     assert hasattr(AtlasDesktopApp, "_animate_core")
+    assert hasattr(AtlasDesktopApp, "_reflow_for_width")
     assert hasattr(AtlasDesktopApp, "_update_input_status")
+
+
+def test_desktop_app_uses_explicit_hold_to_talk_without_a_wake_listener() -> None:
+    assert hasattr(AtlasDesktopApp, "_start_recording")
+    assert hasattr(AtlasDesktopApp, "_stop_recording")
+    assert not hasattr(AtlasDesktopApp, "_activate_wake_listener")
+    assert not hasattr(AtlasDesktopApp, "_toggle_recording")
 
 
 def test_desktop_app_includes_device_status_visual() -> None:

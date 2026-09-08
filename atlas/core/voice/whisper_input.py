@@ -5,11 +5,8 @@ import asyncio
 import os
 import re
 import shutil
-import subprocess
 import tempfile
-import threading
 import wave
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -122,87 +119,6 @@ class PushToTalkRecorder:
         await self._recognizer.prewarm()
 
 
-class WakePhraseListener:
-    """Continuously detect ``Hey Atlas`` locally with whisper.cpp's microphone mode."""
-
-    def __init__(self, recognizer: WhisperCppRecognizer) -> None:
-        self._recognizer = recognizer
-        self._stop_event = threading.Event()
-        self._process: subprocess.Popen[str] | None = None
-        self._lock = threading.Lock()
-
-    def is_ready(self) -> bool:
-        return self._recognizer.model_path.is_file() and shutil.which("whisper-stream") is not None
-
-    def start(self, on_wake: Callable[[], None]) -> bool:
-        if not self.is_ready() or self.is_running():
-            return False
-        self._stop_event.clear()
-        threading.Thread(target=self._run, args=(on_wake,), daemon=True).start()
-        return True
-
-    def stop(self) -> None:
-        self._stop_event.set()
-        with self._lock:
-            if self._process is not None and self._process.poll() is None:
-                self._process.terminate()
-
-    def is_running(self) -> bool:
-        with self._lock:
-            return self._process is not None and self._process.poll() is None
-
-    def _run(self, on_wake: Callable[[], None]) -> None:
-        command = [
-            "whisper-stream",
-            "--model",
-            str(self._recognizer.model_path),
-            "--language",
-            "en",
-            "--threads",
-            "2",
-            "--step",
-            "1250",
-            "--length",
-            "2500",
-            "--max-tokens",
-            "12",
-            "--no-fallback",
-        ]
-        try:
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                bufsize=1,
-            )
-        except OSError:
-            return
-        with self._lock:
-            self._process = process
-        recent = ""
-        assert process.stdout is not None
-        try:
-            for line in process.stdout:
-                if self._stop_event.is_set():
-                    return
-                recent = f"{recent} {line}"[-240:]
-                if _contains_wake_phrase(recent):
-                    on_wake()
-                    return
-        finally:
-            if process.poll() is None:
-                process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-            with self._lock:
-                if self._process is process:
-                    self._process = None
-
-
 def _sounddevice() -> Any | None:
     try:
         import sounddevice  # type: ignore[import-untyped]
@@ -238,15 +154,6 @@ def normalize_voice_transcript(transcript: str) -> str:
     return cleaned
 
 
-def split_wake_phrase(transcript: str) -> tuple[bool, str]:
-    """Recognize a local 'Hey Atlas' wake phrase and return any following request."""
-    cleaned = " ".join(transcript.split())
-    match = re.match(r"^(?:hey|hi|hello)\s+atlas(?:[,.! ]+|$)(.*)$", cleaned, re.IGNORECASE)
-    if match is None:
-        return False, cleaned
-    return True, match.group(1).strip(" ,.!?")
-
-
 def is_ambiguous_voice_transcript(transcript: str) -> bool:
     """Reject only clear non-speech artifacts; legitimate short commands remain valid."""
     words = re.findall(r"[A-Za-z]+", transcript)
@@ -256,10 +163,6 @@ def is_ambiguous_voice_transcript(transcript: str) -> bool:
         return True
     normalized = [word.casefold() for word in words]
     return len(normalized) >= 3 and len(set(normalized)) == 1
-
-
-def _contains_wake_phrase(text: str) -> bool:
-    return re.search(r"\b(?:hey|hi|hello)\s+atlas\b", text, re.IGNORECASE) is not None
 
 
 def _transcription_threads() -> int:

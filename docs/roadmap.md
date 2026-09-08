@@ -19,17 +19,17 @@
 - [x] **Quality-of-Life v0.1.** Preloaded fast-response model, disabled
   thinking for everyday chat, rapid local transcription, fixed voice cues,
   and safe correction of unambiguous transcript slips.
-- [x] **Quality-of-Life v0.3.** Toggle recording control, local wake phrase,
-  selected-voice acknowledgement only for slow voice requests, and clearer
-  handling of unintelligible transcription.
-- [x] **Quality-of-Life v0.4.** Always-listening local “Hey Atlas” wake
-  listener alongside the manual recording control.
+- [x] **Quality-of-Life v0.3–v0.4.** Selected-voice acknowledgement only for
+  slow voice requests and clearer handling of unintelligible transcription.
+- [x] **Quality-of-Life v0.5.** Replaced the experimental wake listener with
+  explicit hold-to-talk recording and rebuilt the desktop interface around a
+  responsive celestial-navigation visual system with keyboard focus and
+  reduced-motion support.
 
 ## Next
 
-- [ ] **Voice input v0.2.** Optional wake-word detection and refined
-  transcription controls, with microphone permission requested only when the
-  user enables it.
+- [ ] **Voice input v0.2.** Refined transcription controls and optional
+  language support while retaining explicit hold-to-talk privacy.
 - [ ] **Service integrations.** Calendar, Reminders, Mail, notifications, and
   other integrations with explicit scopes and capability-aware replies.
 - [ ] **Desktop refinement.** Better settings, update handling, packaging, and
@@ -41,6 +41,6 @@
 
 ## Explicitly out of scope for now
 
-Arbitrary shell execution, a cloud LLM as the default backend, and silent
-access to private services or data. Atlas remains local-first and asks before
-it changes your computer.
+Arbitrary shell execution, a cloud LLM as the default backend, background
+microphone listening, and silent access to private services or data. Atlas
+remains local-first and asks before it changes your computer.

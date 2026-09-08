@@ -86,11 +86,9 @@ model directory.
 
 ## Voice input (optional)
 
-Atlas continuously listens locally for **“Hey Atlas”** while its desktop app is
-open. On detection, it plays a listening chime and begins recording your next
-request. The **RECORD VOICE** button remains available as a manual shortcut.
-Click it once to begin recording and once more to finish; Atlas sends a valid
-transcribed request directly. Typing remains available when you prefer it.
+Atlas records only while you hold **Hold to talk** in the desktop app. Press
+and hold the control to speak; release it to transcribe and send a valid
+request directly. Typing remains available when you prefer it.
 Install the local engine and rapid command speech model once:
 
 ```bash
