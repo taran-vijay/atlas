@@ -210,6 +210,17 @@ async def test_casual_message_does_not_offer_system_tools() -> None:
     assert llm.tool_sets == [None]
 
 
+async def test_casual_voice_name_mistake_is_handled_without_a_correction_prompt() -> None:
+    memory = _InMemoryStore()
+    llm = _ScriptedLLM([LLMResponse(content="I’m doing well. How can I help?")])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    reply = await core.handle_message("Yeah, Liz. How are you doing today?")
+
+    assert reply == "I’m doing well. How can I help?"
+    assert "do not scold or correct" in llm.messages[0][0].content
+
+
 async def test_local_communication_profile_guides_the_model_without_raw_style_data() -> None:
     memory = _InMemoryStore()
     memory._profile = CommunicationProfile(response_style="concise", tone="casual")

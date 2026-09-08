@@ -111,10 +111,12 @@ async def _create_app(config: AtlasConfig) -> AtlasWebApp:
         timeout=config.llm_request_timeout_seconds,
         context_tokens=config.llm_context_tokens,
         max_response_tokens=config.llm_max_response_tokens,
+        think=config.llm_think,
         keep_alive=config.llm_keep_alive,
     )
     if not await llm.is_available():
         raise RuntimeError(f"Could not reach Ollama at {config.ollama_host}.")
+    await llm.warm()
     return AtlasWebApp(
         AssistantCore(
             assistant_name=config.assistant_name,

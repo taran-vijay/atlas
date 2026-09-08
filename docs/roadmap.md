@@ -16,6 +16,9 @@
   neural voices, synchronized reply text, and a startup announcement.
 - [x] **Voice input v0.1.** Optional local hold-to-talk recording and
   whisper.cpp transcription; no wake word or background microphone access.
+- [x] **Quality-of-Life v0.1.** Preloaded fast-response model, disabled
+  thinking for everyday chat, rapid local transcription, fixed voice cues,
+  and safe correction of unambiguous transcript slips.
 
 ## Next
 

@@ -50,3 +50,14 @@ async def test_provider_sends_bounded_resource_options_to_ollama() -> None:
         "num_predict": 256,
     }
     assert client.payload["keep_alive"] == "3m"
+    assert client.payload["think"] is False
+
+
+async def test_provider_preloads_the_local_model() -> None:
+    client = _Client()
+    provider = OllamaProvider("http://localhost:11434", "atlas-model", keep_alive="15m")
+
+    with patch("atlas.core.llm.ollama_provider.httpx.AsyncClient", return_value=client):
+        await provider.warm()
+
+    assert client.payload == {"model": "atlas-model", "stream": False, "keep_alive": "15m"}

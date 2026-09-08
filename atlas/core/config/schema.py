@@ -42,7 +42,8 @@ class AtlasConfig(BaseSettings):
     llm_request_timeout_seconds: float = 60.0
     llm_context_tokens: int = Field(default=4096, ge=1024, le=32768)
     llm_max_response_tokens: int = Field(default=512, ge=64, le=4096)
-    llm_keep_alive: str = "5m"
+    llm_think: bool = False
+    llm_keep_alive: str = "15m"
 
     # Memory
     memory_db_path: Path = Path.home() / ".atlas" / "memory.db"

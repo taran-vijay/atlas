@@ -38,7 +38,9 @@ _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE = (
     "Reply directly and naturally to the user. Never say that you cannot have a casual "
     "conversation or that no action was taken. Never claim to have accessed a user's private "
     "device data or an external service unless a tool result in this conversation provides it; "
-    "say you are unable to access it instead."
+    "say you are unable to access it instead. Never use emoji unless the user explicitly asks. "
+    "If a casual voice transcript uses a different name for you, treat it as a likely transcription "
+    "mistake and answer the user's intent helpfully; do not scold or correct them."
 )
 
 _COMMUNICATION_PROFILE_PROMPT = (

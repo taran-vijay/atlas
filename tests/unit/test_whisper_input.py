@@ -1,7 +1,12 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from atlas.core.voice.whisper_input import WhisperCppRecognizer, _clean_transcript, _wav_bytes
+from atlas.core.voice.whisper_input import (
+    WhisperCppRecognizer,
+    _clean_transcript,
+    _wav_bytes,
+    normalize_voice_transcript,
+)
 
 
 def test_whisper_recognizer_requires_a_local_binary_and_model(tmp_path: Path) -> None:
@@ -25,3 +30,8 @@ def test_wav_builder_creates_a_valid_mono_pcm_wave() -> None:
 
     assert data[:4] == b"RIFF"
     assert data[8:12] == b"WAVE"
+
+
+def test_voice_transcript_repairs_only_an_unambiguous_phonetic_command_error() -> None:
+    assert normalize_voice_transcript("Blame machine learning to me.") == "Explain machine learning to me."
+    assert normalize_voice_transcript("Blame the printer for this") == "Blame the printer for this"

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import tempfile
 import wave
@@ -141,6 +142,16 @@ def _clean_transcript(output: str) -> str:
     """Keep user speech, excluding whisper.cpp's bracketed diagnostics."""
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     return " ".join(line for line in lines if not line.startswith(("whisper_", "system_info:")))
+
+
+def normalize_voice_transcript(transcript: str) -> str:
+    """Repair only unambiguous command-style recognition slips before dispatch."""
+    cleaned = " ".join(transcript.split())
+    # A common phonetic confusion: "explain" becomes "blame" in short commands.
+    corrected = re.fullmatch(r"blame\s+(.+?)\s+to\s+me[.!?]*", cleaned, re.IGNORECASE)
+    if corrected is not None:
+        return f"Explain {corrected.group(1)} to me."
+    return cleaned
 
 
 def _transcription_threads() -> int:
