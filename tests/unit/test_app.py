@@ -1,5 +1,7 @@
+import inspect
 from unittest.mock import AsyncMock
 
+import atlas.app as desktop_app
 from atlas.app import (
     _DEVICE_ASSET,
     _STARTUP_ANNOUNCEMENT,
@@ -36,6 +38,10 @@ def test_desktop_app_uses_explicit_hold_to_talk_without_a_wake_listener() -> Non
 
 def test_desktop_app_includes_device_status_visual() -> None:
     assert _DEVICE_ASSET.is_file()
+
+
+def test_desktop_app_uses_only_supported_tk_text_options() -> None:
+    assert "disabledforeground" not in inspect.getsource(desktop_app)
 
 
 async def test_startup_voice_announces_online_without_a_repeated_greeting() -> None:
