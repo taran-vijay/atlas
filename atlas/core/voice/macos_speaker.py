@@ -46,13 +46,14 @@ class MacOSSpeaker:
             if voice is not None:
                 command.extend(["-v", voice])
             command.extend(["-r", str(rate), spoken_text])
+            lead_words = _emit_leading_progress(spoken_text, on_progress)
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
             progress = (
-                asyncio.create_task(_emit_progress(spoken_text, rate, on_progress))
+                asyncio.create_task(_emit_progress(spoken_text, rate, on_progress, start_index=lead_words))
                 if on_progress is not None
                 else None
             )
@@ -101,11 +102,24 @@ def _speech_text(text: str) -> str:
     return normalized.strip()[:_MAX_SPOKEN_CHARACTERS]
 
 
-async def _emit_progress(text: str, rate: int, callback: Callable[[str], None]) -> None:
-    """Advance the transcript at the same conversational pace used by ``say``."""
+def _emit_leading_progress(text: str, callback: Callable[[str], None] | None) -> int:
+    """Render the first words just before playback so the transcript never trails speech."""
+    if callback is None:
+        return 0
+    words = re.findall(r"\S+\s*", text)
+    leading = min(2, len(words))
+    if leading:
+        callback("".join(words[:leading]))
+    return leading
+
+
+async def _emit_progress(
+    text: str, rate: int, callback: Callable[[str], None], *, start_index: int = 0
+) -> None:
+    """Advance the transcript at speech pace, after a small lead-in has been rendered."""
     words = re.findall(r"\S+\s*", text)
     seconds_per_word = 60 / rate
-    for index in range(0, len(words), 2):
+    for index in range(start_index, len(words), 2):
         chunk = "".join(words[index:index + 2])
-        callback(chunk)
         await asyncio.sleep(seconds_per_word * len(words[index:index + 2]))
+        callback(chunk)

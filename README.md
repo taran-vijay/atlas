@@ -14,13 +14,16 @@ through explicitly scoped, permission-gated tools.
 - Run a native macOS desktop chat app or a terminal chat session
 - Use a local Ollama model for normal conversation and writing
 - Remember facts you explicitly ask it to save, locally in SQLite
+- Adapt reply length and tone from aggregate, on-device communication signals;
+  reset those preferences any time from **Memory Archive**
+- Offer safe, clickable follow-up suggestions based on the current exchange
 - Read system time, OS details, battery, processes, network, and selected
   local-file information
 - Open apps/files, write to the clipboard, and perform scoped file actions
   only after your in-app confirmation
 - Keep an action history and distinguish verified results from unavailable data
 - Read replies aloud with a built-in macOS voice or optional local Piper
-  neural voices
+  neural voices, while keeping the visible transcript paced with speech
 
 Atlas cannot yet read Calendar, Mail, Messages, reminders, browser data, or
 other connected services. It says so directly instead of inventing results.
@@ -86,6 +89,19 @@ Configuration lives in `.env` or environment variables beginning with
 `ATLAS_`. See [`.env.example`](.env.example). Useful settings include
 `ATLAS_ASSISTANT_NAME`, `ATLAS_LLM_MODEL`, `ATLAS_OLLAMA_HOST`, and
 `ATLAS_NEURAL_VOICE_MODELS_DIR`.
+
+## Personalization and response speed
+
+Atlas learns only a small local communication profile: whether your recent
+messages tend to be concise or detailed, and casual or neutral. It uses that
+profile to phrase replies more naturally. This is not a cloud profile and does
+not grant Atlas new access to personal data. Reset it through **Memory Archive
+→ Reset Communication Style**, or say “reset communication preferences.”
+
+For the fastest replies, keep Ollama running and select a model that fits your
+Mac's memory comfortably. Atlas keeps conversation context bounded and reuses
+the loaded model between requests. Raw model speed still depends primarily on
+the selected model and your Mac.
 
 ## Permissions
 

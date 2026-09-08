@@ -15,6 +15,7 @@ from typing import Any
 
 from atlas.core.memory.base import (
     ActionRecord,
+    CommunicationProfile,
     MemoryStore,
     MemoryTurn,
     SavedMemory,
@@ -50,6 +51,14 @@ CREATE TABLE IF NOT EXISTS voice_settings (
     engine TEXT NOT NULL DEFAULT 'neural',
     neural_voice TEXT NOT NULL DEFAULT 'male_ryan',
     voice TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS communication_profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    message_count INTEGER NOT NULL DEFAULT 0,
+    total_words INTEGER NOT NULL DEFAULT 0,
+    short_message_count INTEGER NOT NULL DEFAULT 0,
+    casual_message_count INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -136,6 +145,42 @@ class SQLiteMemoryStore(MemoryStore):
         with self._connect() as conn:
             conn.execute("DELETE FROM actions")
 
+    async def observe_communication_style(self, user_input: str) -> CommunicationProfile:
+        """Store aggregate style signals only; the original message stays in the transcript."""
+        words = len(user_input.split())
+        short = int(words <= 8)
+        casual = int(_is_casual_message(user_input))
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO communication_profile "
+                "(id, message_count, total_words, short_message_count, casual_message_count) "
+                "VALUES (1, 1, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET message_count = message_count + 1, "
+                "total_words = total_words + excluded.total_words, "
+                "short_message_count = short_message_count + excluded.short_message_count, "
+                "casual_message_count = casual_message_count + excluded.casual_message_count",
+                (words, short, casual),
+            )
+        return await self.get_communication_profile()
+
+    async def get_communication_profile(self) -> CommunicationProfile:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT message_count, total_words, short_message_count, casual_message_count "
+                "FROM communication_profile WHERE id = 1"
+            ).fetchone()
+        if row is None or row[0] < 3:
+            return CommunicationProfile()
+        messages, words, short_messages, casual_messages = row
+        average_words = words / messages
+        response_style = "concise" if average_words <= 12 or short_messages / messages >= 0.65 else "detailed" if average_words >= 28 else "balanced"
+        tone = "casual" if casual_messages / messages >= 0.3 else "neutral"
+        return CommunicationProfile(response_style=response_style, tone=tone)
+
+    async def clear_communication_profile(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM communication_profile")
+
     async def get_voice_settings(self) -> VoiceSettings:
         with self._connect() as conn:
             row = conn.execute(
@@ -209,6 +254,12 @@ def _normalize_neural_voice(voice: str) -> str:
     if voice == "female_lessac":
         return "female_amy"
     return voice if voice in _NEURAL_VOICE_IDS else "male_ryan"
+
+
+def _is_casual_message(message: str) -> bool:
+    normalized = message.casefold()
+    markers = ("lol", "hey", "hi", "thanks", "pls", "gonna", "wanna", "im ", "i'm ")
+    return any(marker in normalized for marker in markers)
 
 
 def _action_outcome(result: ToolResult) -> str:

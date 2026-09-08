@@ -15,7 +15,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Protocol
+from typing import Literal, Protocol
 
 from atlas.cli import _build_tool_registry, _configure_logging
 from atlas.core.assistant.core import AssistantCore
@@ -55,6 +55,10 @@ class HandlesMemory(HandlesMessage, Protocol):
     async def list_recent_actions(self) -> list[ActionRecord]: ...
 
     async def clear_action_history(self) -> None: ...
+
+    async def clear_communication_profile(self) -> None: ...
+
+    async def suggestions_for(self, user_input: str, reply: str) -> list[str]: ...
 
     async def get_voice_settings(self) -> VoiceSettings: ...
 
@@ -231,6 +235,10 @@ class AtlasDesktopApp:
         self._transcript.tag_configure("user", foreground=_GOLD, font=("Helvetica", 10, "bold"))
         self._append("Atlas", _INITIAL_GREETING)
 
+        self._suggestion_bar = tk.Frame(content, bg=_MIDNIGHT)
+        self._suggestion_bar.pack(fill=tk.X, pady=(8, 0))
+        self._render_suggestions(["What can Atlas help with?", "Help me plan next steps"])
+
         composer = tk.Frame(content, bg=_DEEP_BLUE, highlightbackground=_EDGE, highlightthickness=1)
         composer.pack(fill=tk.X, pady=(10, 0))
         composer_head = tk.Frame(composer, bg=_DEEP_BLUE)
@@ -246,7 +254,18 @@ class AtlasDesktopApp:
         self._input.bind("<Command-Return>", self._send_event)
         self._input.bind("<Control-Return>", self._send_event)
         self._input.bind("<KeyRelease>", self._update_input_status)
-        self._send_button = tk.Button(input_shell, text="EXECUTE  ›", command=self._send, bg=_CYAN, fg="#031019", activebackground="#b5fbff", activeforeground="#031019", relief=tk.FLAT, bd=0, font=("Helvetica", 10, "bold"), padx=22, pady=12, cursor="hand2")
+        self._send_button = self._command_label(
+            input_shell,
+            "EXECUTE  ›",
+            self._send,
+            background="#124764",
+            foreground=_TEXT,
+            hover_background="#1a6384",
+            hover_foreground="#ffffff",
+            padding_x=22,
+            padding_y=12,
+            font=("Helvetica", 10, "bold"),
+        )
         self._send_button.pack(side=tk.RIGHT, padx=10, pady=10)
         self._input.focus_set()
         self._refresh_field()
@@ -255,46 +274,80 @@ class AtlasDesktopApp:
             self._root.after(350, self._start_startup_voice)
 
     @staticmethod
-    def _navigation_button(parent: tk.Misc, text: str, command: Callable[[], None]) -> tk.Button:
-        return tk.Button(
+    def _command_label(
+        parent: tk.Misc,
+        text: str,
+        command: Callable[[], None],
+        *,
+        background: str,
+        foreground: str,
+        hover_background: str,
+        hover_foreground: str,
+        padding_x: int,
+        padding_y: int,
+        font: tuple[str, int, str],
+        anchor: Literal["w", "center"] = "center",
+    ) -> tk.Label:
+        """A dark, accessible-looking command control that macOS will not recolor white."""
+        control = tk.Label(
             parent,
             text=text,
-            command=command,
-            anchor=tk.W,
-            bg=_DEEP_BLUE,
-            fg=_TEXT,
-            activebackground=_PANEL_ALT,
-            activeforeground=_CYAN,
-            relief=tk.FLAT,
-            bd=0,
-            highlightthickness=1,
-            highlightbackground="#173c5a",
-            highlightcolor=_CYAN,
-            font=("Helvetica", 10, "bold"),
-            padx=15,
-            pady=11,
+            anchor=anchor,
+            bg=background,
+            fg=foreground,
+            font=font,
+            padx=padding_x,
+            pady=padding_y,
             cursor="hand2",
+            highlightthickness=1,
+            highlightbackground="#214d6c",
+        )
+
+        def enter(_: tk.Event[tk.Misc]) -> None:
+            if str(control.cget("state")) != "disabled":
+                control.configure(bg=hover_background, fg=hover_foreground, highlightbackground=_CYAN)
+
+        def leave(_: tk.Event[tk.Misc]) -> None:
+            control.configure(bg=background, fg=foreground, highlightbackground="#214d6c")
+
+        def activate(_: tk.Event[tk.Misc]) -> None:
+            if str(control.cget("state")) != "disabled":
+                command()
+
+        control.bind("<Enter>", enter)
+        control.bind("<Leave>", leave)
+        control.bind("<Button-1>", activate)
+        return control
+
+    @staticmethod
+    def _navigation_button(parent: tk.Misc, text: str, command: Callable[[], None]) -> tk.Label:
+        return AtlasDesktopApp._command_label(
+            parent,
+            text,
+            command,
+            background="#091a31",
+            foreground=_TEXT,
+            hover_background="#123b59",
+            hover_foreground=_CYAN,
+            padding_x=15,
+            padding_y=11,
+            font=("Helvetica", 10, "bold"),
+            anchor="w",
         )
 
     @staticmethod
-    def _ghost_button(parent: tk.Misc, text: str, command: Callable[[], None]) -> tk.Button:
-        return tk.Button(
+    def _ghost_button(parent: tk.Misc, text: str, command: Callable[[], None]) -> tk.Label:
+        return AtlasDesktopApp._command_label(
             parent,
-            text=text,
-            command=command,
-            bg=_MIDNIGHT,
-            fg=_TEXT,
-            activebackground=_PANEL_ALT,
-            activeforeground=_CYAN,
-            relief=tk.FLAT,
-            bd=0,
-            highlightthickness=1,
-            highlightbackground="#214c6a",
-            highlightcolor=_CYAN,
+            text,
+            command,
+            background="#07162b",
+            foreground=_TEXT,
+            hover_background="#123b59",
+            hover_foreground=_CYAN,
+            padding_x=12,
+            padding_y=7,
             font=("Helvetica", 9, "bold"),
-            padx=12,
-            pady=7,
-            cursor="hand2",
         )
 
     @staticmethod
@@ -381,7 +434,22 @@ class AtlasDesktopApp:
             asyncio.run(self._assistant.clear_saved_memories())
             self._root.after(0, refresh)
 
-        tk.Button(window, text="CLEAR ALL MEMORIES", command=clear_all, bg="#2e1724", fg="#ffd5da", activebackground="#572638", activeforeground="#ffffff", relief=tk.FLAT, bd=0, highlightthickness=1, highlightbackground="#74384b", font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(anchor=tk.E, padx=22, pady=18)
+        def reset_style() -> None:
+            if messagebox.askyesno(
+                "Reset communication preferences",
+                "Forget the response-style preferences Atlas inferred locally?",
+                parent=window,
+            ):
+                threading.Thread(target=clear_style, daemon=True).start()
+
+        def clear_style() -> None:
+            asyncio.run(self._assistant.clear_communication_profile())
+
+        controls = tk.Frame(window, bg="#0b121c")
+        controls.pack(fill=tk.X, padx=22, pady=18)
+        self._command_label(controls, "RESET COMMUNICATION STYLE", reset_style, background="#0d2943", foreground=_TEXT, hover_background="#18516f", hover_foreground=_CYAN, padding_x=12, padding_y=9, font=("Helvetica", 8, "bold")).pack(side=tk.LEFT)
+        self._command_label(controls, "CLEAR ALL MEMORIES", clear_all, background="#2b1724", foreground="#ffd7dc", hover_background="#5a283b", hover_foreground="#ffffff", padding_x=14, padding_y=9, font=("Helvetica", 9, "bold")).pack(side=tk.RIGHT)
+
         refresh()
 
     def _open_action_history(self) -> None:
@@ -419,7 +487,7 @@ class AtlasDesktopApp:
             asyncio.run(self._assistant.clear_action_history())
             self._root.after(0, refresh)
 
-        tk.Button(window, text="CLEAR ACTION HISTORY", command=clear_all, bg="#2e1724", fg="#ffd5da", activebackground="#572638", activeforeground="#ffffff", relief=tk.FLAT, bd=0, highlightthickness=1, highlightbackground="#74384b", font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(anchor=tk.E, padx=22, pady=18)
+        self._command_label(window, "CLEAR ACTION HISTORY", clear_all, background="#2b1724", foreground="#ffd7dc", hover_background="#5a283b", hover_foreground="#ffffff", padding_x=14, padding_y=9, font=("Helvetica", 9, "bold")).pack(anchor=tk.E, padx=22, pady=18)
         refresh()
 
     def _open_settings_window(self) -> None:
@@ -492,8 +560,8 @@ class AtlasDesktopApp:
 
         buttons = tk.Frame(window, bg="#0b121c")
         buttons.pack(fill=tk.X, padx=22, pady=22)
-        tk.Button(buttons, text="TEST VOICE", command=test_voice, bg=_PANEL_ALT, fg=_TEXT, activebackground="#1b4e70", activeforeground=_CYAN, relief=tk.FLAT, bd=0, highlightthickness=1, highlightbackground="#245676", font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(side=tk.LEFT)
-        tk.Button(buttons, text="SAVE SETTINGS", command=save, bg=_CYAN, fg="#031019", activebackground="#b5fbff", activeforeground="#031019", relief=tk.FLAT, bd=0, font=("Helvetica", 9, "bold"), padx=14, pady=9, cursor="hand2").pack(side=tk.RIGHT)
+        self._command_label(buttons, "TEST VOICE", test_voice, background="#0d2943", foreground=_TEXT, hover_background="#18516f", hover_foreground=_CYAN, padding_x=14, padding_y=9, font=("Helvetica", 9, "bold")).pack(side=tk.LEFT)
+        self._command_label(buttons, "SAVE SETTINGS", save, background="#124764", foreground=_TEXT, hover_background="#1a6384", hover_foreground="#ffffff", padding_x=14, padding_y=9, font=("Helvetica", 9, "bold")).pack(side=tk.RIGHT)
 
     def _set_field_state(self, state: str) -> None:
         self._field_state = state
@@ -524,6 +592,47 @@ class AtlasDesktopApp:
         self._transcript.configure(state=tk.DISABLED)
         self._transcript.see(tk.END)
 
+    def _render_suggestions(self, suggestions: list[str]) -> None:
+        """Show reusable, safe follow-ups under the conversation stream."""
+        for child in self._suggestion_bar.winfo_children():
+            child.destroy()
+        if not suggestions:
+            return
+        tk.Label(
+            self._suggestion_bar,
+            text="NEXT",
+            fg=_MUTED,
+            bg=_MIDNIGHT,
+            font=("Helvetica", 8, "bold"),
+        ).pack(side=tk.LEFT, padx=(2, 8))
+        for suggestion in suggestions[:2]:
+            self._command_label(
+                self._suggestion_bar,
+                suggestion.upper(),
+                self._suggestion_command(suggestion),
+                background="#07162b",
+                foreground=_TEXT,
+                hover_background="#123b59",
+                hover_foreground=_CYAN,
+                padding_x=10,
+                padding_y=6,
+                font=("Helvetica", 8, "bold"),
+            ).pack(side=tk.LEFT, padx=(0, 7))
+
+    def _suggestion_command(self, suggestion: str) -> Callable[[], None]:
+        def use_suggestion() -> None:
+            self._use_suggestion(suggestion)
+
+        return use_suggestion
+
+    def _use_suggestion(self, suggestion: str) -> None:
+        if self._busy:
+            return
+        self._input.delete("1.0", tk.END)
+        self._input.insert("1.0", suggestion)
+        self._update_input_status()
+        self._input.focus_set()
+
     def _send_event(self, event: tk.Event[tk.Misc]) -> str:
         self._send()
         return "break"
@@ -545,12 +654,14 @@ class AtlasDesktopApp:
     def _reply(self, message: str) -> None:
         try:
             reply = asyncio.run(self._assistant.handle_message(message))
+            suggestions = asyncio.run(self._assistant.suggestions_for(message, reply))
         except Exception:
             logging.getLogger("atlas.app").exception("desktop chat request failed")
             reply = "I’m unable to complete that request right now."
-        self._root.after(0, self._finish_reply, reply)
+            suggestions = []
+        self._root.after(0, self._finish_reply, reply, suggestions)
 
-    def _finish_reply(self, reply: str) -> None:
+    def _finish_reply(self, reply: str, suggestions: list[str]) -> None:
         if self._voice_settings.enabled:
             spoken_reply = _speech_text(reply)
             self._begin_spoken_reply()
@@ -560,6 +671,7 @@ class AtlasDesktopApp:
         self._busy = False
         self._set_field_state("READY")
         self._send_button.configure(state=tk.NORMAL, text="EXECUTE  ›")
+        self._render_suggestions(suggestions)
         self._input.focus_set()
 
     def _begin_spoken_reply(self) -> None:
@@ -631,7 +743,7 @@ class ConnectionScreen:
         self._status.pack()
         self._detail = tk.Label(frame, text="OLLAMA  ·  macOS  ·  PRIVATE SESSION", fg=_MUTED, bg=_MIDNIGHT, font=("Helvetica", 9, "bold"))
         self._detail.pack(pady=(5, 0))
-        self._retry = tk.Button(frame, text="RETRY CONNECTION", command=self.start_check, bg=_CYAN, fg="#031019", activebackground="#b5fbff", relief=tk.FLAT, bd=0, font=("Helvetica", 9, "bold"), padx=14, pady=8, cursor="hand2")
+        self._retry = AtlasDesktopApp._command_label(frame, "RETRY CONNECTION", self.start_check, background="#124764", foreground=_TEXT, hover_background="#1a6384", hover_foreground="#ffffff", padding_x=14, padding_y=8, font=("Helvetica", 9, "bold"))
         self._animate()
         self.start_check()
 

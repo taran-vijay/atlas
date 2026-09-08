@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from atlas.core.memory.base import VoiceSettings
-from atlas.core.voice.macos_speaker import MacOSSpeaker, _speech_text
+from atlas.core.voice.macos_speaker import MacOSSpeaker, _emit_leading_progress, _speech_text
 
 _LOGGER = logging.getLogger(__name__)
 NEURAL_VOICE_OPTIONS = {
@@ -81,6 +81,7 @@ class PiperSpeaker:
                 return False
 
             duration = _wav_duration(audio_path)
+            lead_words = _emit_leading_progress(spoken_text, on_progress)
             player = await asyncio.create_subprocess_exec(
                 "afplay",
                 str(audio_path),
@@ -88,7 +89,9 @@ class PiperSpeaker:
                 stderr=asyncio.subprocess.DEVNULL,
             )
             progress = (
-                asyncio.create_task(_emit_timed_progress(spoken_text, duration, on_progress))
+                asyncio.create_task(
+                    _emit_timed_progress(spoken_text, duration, on_progress, start_index=lead_words)
+                )
                 if on_progress is not None
                 else None
             )
@@ -156,14 +159,14 @@ def _wav_duration(path: Path) -> float:
 
 
 async def _emit_timed_progress(
-    text: str, duration: float, callback: Callable[[str], None]
+    text: str, duration: float, callback: Callable[[str], None], *, start_index: int = 0
 ) -> None:
     """Render text as the generated audio plays, using its real WAV duration."""
     words = re.findall(r"\S+\s*", text)
     if not words:
         return
     seconds_per_word = max(duration, 0.1) / len(words)
-    for index in range(0, len(words), 2):
+    for index in range(start_index, len(words), 2):
         chunk = "".join(words[index : index + 2])
-        callback(chunk)
         await asyncio.sleep(seconds_per_word * len(words[index : index + 2]))
+        callback(chunk)
