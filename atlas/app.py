@@ -287,6 +287,7 @@ class AtlasDesktopApp:
         self._mic_button.bind("<ButtonPress-1>", self._start_recording)
         self._mic_button.bind("<ButtonRelease-1>", self._stop_recording)
         self._input.focus_set()
+        threading.Thread(target=self._prewarm_voice_input, daemon=True).start()
         self._refresh_field()
         self._animate_core()
         if self._voice_settings.enabled:
@@ -687,8 +688,7 @@ class AtlasDesktopApp:
     def _voice_input_ready(self, transcript: str) -> None:
         self._mic_button.configure(text="HOLD TO TALK", bg="#0d2943", fg=_TEXT)
         if transcript:
-            self._input.insert(tk.END, transcript + " ")
-            self._update_input_status()
+            self._send(transcript)
         else:
             self._input_status.configure(text="NO SPEECH DETECTED")
         self._input.focus_set()
@@ -698,10 +698,10 @@ class AtlasDesktopApp:
         self._input_status.configure(text="VOICE INPUT UNAVAILABLE")
         messagebox.showerror("Voice input", error, parent=self._root)
 
-    def _send(self) -> None:
+    def _send(self, voice_message: str | None = None) -> None:
         if self._busy:
             return
-        message = self._input.get("1.0", tk.END).strip()
+        message = voice_message or self._input.get("1.0", tk.END).strip()
         if not message:
             return
         self._input.delete("1.0", tk.END)
@@ -711,6 +711,13 @@ class AtlasDesktopApp:
         self._set_field_state("PROCESSING")
         self._send_button.configure(state=tk.DISABLED, text="ANALYZING…")
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
+
+    def _prewarm_voice_input(self) -> None:
+        """Keep first push-to-talk use responsive without blocking the command deck."""
+        try:
+            asyncio.run(self._voice_input.prewarm())
+        except OSError:
+            logging.getLogger("atlas.app").info("voice_input_prewarm_unavailable")
 
     def _reply(self, message: str) -> None:
         try:

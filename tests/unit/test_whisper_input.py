@@ -9,7 +9,7 @@ def test_whisper_recognizer_requires_a_local_binary_and_model(tmp_path: Path) ->
 
     with patch.object(WhisperCppRecognizer, "_executable", return_value="whisper-cli"):
         assert recognizer.is_ready() is False
-    (tmp_path / "ggml-base.en.bin").write_bytes(b"model")
+    (tmp_path / "ggml-tiny.en.bin").write_bytes(b"model")
     with patch.object(WhisperCppRecognizer, "_executable", return_value="whisper-cli"):
         assert recognizer.is_ready() is True
 

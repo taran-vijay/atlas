@@ -87,14 +87,17 @@ model directory.
 ## Voice input (optional)
 
 Atlas can transcribe speech locally while you hold **HOLD TO TALK** in the
-desktop app. Install the local engine and speech model once:
+desktop app. Releasing the control sends the transcribed request directly to
+Atlas; typing remains available when you prefer it. Install the local engine
+and rapid command speech model once:
 
 ```bash
 ./scripts/setup_voice_input.sh
 ```
 
 This setup uses Homebrew to install whisper.cpp, then downloads the local
-English speech model.
+English speech model. Atlas uses the compact model for responsive command
+transcription and warms it in the background after launch.
 
 The first use asks macOS for microphone permission. Recording starts only
 while the control is held, stops when released, and is transcribed on-device.
