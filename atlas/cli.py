@@ -82,6 +82,7 @@ async def _run(config: AtlasConfig) -> None:
         timeout=config.llm_request_timeout_seconds,
         context_tokens=config.llm_context_tokens,
         max_response_tokens=config.llm_max_response_tokens,
+        think=config.llm_think,
         keep_alive=config.llm_keep_alive,
     )
     if not await llm.is_available():
@@ -91,6 +92,7 @@ async def _run(config: AtlasConfig) -> None:
             file=sys.stderr,
         )
         raise SystemExit(1)
+    await llm.warm()
 
     memory = SQLiteMemoryStore(config.memory_db_path)
     tools = _build_tool_registry(audit=memory.record_action)

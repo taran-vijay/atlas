@@ -23,6 +23,7 @@ class OllamaProvider(LLMProvider):
         timeout: float = 60.0,
         context_tokens: int = 4096,
         max_response_tokens: int = 512,
+        think: bool = False,
         keep_alive: str = "5m",
     ) -> None:
         self._host = host.rstrip("/")
@@ -31,6 +32,7 @@ class OllamaProvider(LLMProvider):
         self._timeout = timeout
         self._context_tokens = context_tokens
         self._max_response_tokens = max_response_tokens
+        self._think = think
         self._keep_alive = keep_alive
 
     async def generate(
@@ -43,6 +45,7 @@ class OllamaProvider(LLMProvider):
             "model": self._model,
             "messages": [self._serialize_message(message) for message in messages],
             "stream": False,
+            "think": self._think,
             "options": {
                 "temperature": self._temperature,
                 "num_ctx": self._context_tokens,
@@ -64,6 +67,13 @@ class OllamaProvider(LLMProvider):
             tool_calls=message.get("tool_calls", []) or [],
             raw=data,
         )
+
+    async def warm(self) -> None:
+        """Preload the model so the first real request avoids a cold model load."""
+        payload = {"model": self._model, "stream": False, "keep_alive": self._keep_alive}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(f"{self._host}/api/generate", json=payload)
+            response.raise_for_status()
 
     @staticmethod
     def _serialize_message(message: ChatMessage) -> dict[str, Any]:

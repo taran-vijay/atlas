@@ -26,7 +26,12 @@ from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
 from atlas.core.voice.macos_speaker import VOICE_OPTIONS, _speech_text
 from atlas.core.voice.piper_speaker import NEURAL_VOICE_OPTIONS, LocalVoiceSpeaker
-from atlas.core.voice.whisper_input import PushToTalkRecorder, VoiceInputError, WhisperCppRecognizer
+from atlas.core.voice.whisper_input import (
+    PushToTalkRecorder,
+    VoiceInputError,
+    WhisperCppRecognizer,
+    normalize_voice_transcript,
+)
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 _STARTUP_ANNOUNCEMENT = "ATLAS — Adaptive Tactical Learning & Assistance System is now online."
@@ -79,6 +84,30 @@ async def _speak_startup_sequence(speaker: SpeaksResponses, settings: VoiceSetti
     """Speak the online confirmation before Atlas's first visible reply."""
     for line in (_STARTUP_ANNOUNCEMENT, _INITIAL_GREETING):
         await speaker.speak(line, settings)
+
+
+async def _play_system_sound(name: str) -> None:
+    """Play an immediate macOS listening chime; it never uses the language model."""
+    if platform.system() != "Darwin":
+        return
+    sound = Path("/System/Library/Sounds") / f"{name}.aiff"
+    if not sound.is_file():
+        return
+    process = await asyncio.create_subprocess_exec(
+        "afplay", str(sound), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+    )
+    await process.wait()
+
+
+async def _speak_fixed_acknowledgement() -> None:
+    """A deterministic acknowledgement that begins while Atlas works."""
+    if platform.system() != "Darwin":
+        return
+    process = await asyncio.create_subprocess_exec(
+        "say", "-r", "210", "One moment, sir.", stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await process.wait()
 
 
 class DesktopConfirmationBridge:
@@ -667,6 +696,7 @@ class AtlasDesktopApp:
             messagebox.showinfo("Voice input", str(exc), parent=self._root)
             return
         self._recording = True
+        threading.Thread(target=self._play_listening_cue, daemon=True).start()
         self._mic_button.configure(text="RECORDING… RELEASE", bg="#5a283b", fg="#ffffff")
         self._input_status.configure(text="LISTENING LOCALLY… RELEASE TO TRANSCRIBE")
 
@@ -688,7 +718,9 @@ class AtlasDesktopApp:
     def _voice_input_ready(self, transcript: str) -> None:
         self._mic_button.configure(text="HOLD TO TALK", bg="#0d2943", fg=_TEXT)
         if transcript:
-            self._send(transcript)
+            normalized = normalize_voice_transcript(transcript)
+            threading.Thread(target=self._speak_processing_acknowledgement, daemon=True).start()
+            self._send(normalized)
         else:
             self._input_status.configure(text="NO SPEECH DETECTED")
         self._input.focus_set()
@@ -718,6 +750,13 @@ class AtlasDesktopApp:
             asyncio.run(self._voice_input.prewarm())
         except OSError:
             logging.getLogger("atlas.app").info("voice_input_prewarm_unavailable")
+
+    def _play_listening_cue(self) -> None:
+        asyncio.run(_play_system_sound("Glass"))
+
+    def _speak_processing_acknowledgement(self) -> None:
+        if self._voice_settings.enabled:
+            asyncio.run(_speak_fixed_acknowledgement())
 
     def _reply(self, message: str) -> None:
         try:
@@ -774,9 +813,10 @@ class AtlasDesktopApp:
 async def _create_assistant(
     config: AtlasConfig, *, confirm: ConfirmationCallback | None = None
 ) -> AssistantCore:
-    llm = OllamaProvider(host=config.ollama_host, model=config.llm_model, temperature=config.llm_temperature, timeout=config.llm_request_timeout_seconds, context_tokens=config.llm_context_tokens, max_response_tokens=config.llm_max_response_tokens, keep_alive=config.llm_keep_alive)
+    llm = OllamaProvider(host=config.ollama_host, model=config.llm_model, temperature=config.llm_temperature, timeout=config.llm_request_timeout_seconds, context_tokens=config.llm_context_tokens, max_response_tokens=config.llm_max_response_tokens, think=config.llm_think, keep_alive=config.llm_keep_alive)
     if not await llm.is_available():
         raise RuntimeError(f"Could not reach Ollama at {config.ollama_host}.")
+    await llm.warm()
     memory = SQLiteMemoryStore(config.memory_db_path)
     return AssistantCore(assistant_name=config.assistant_name, llm=llm, memory=memory, tools=_build_tool_registry(confirm=confirm, audit=memory.record_action), max_history_turns=config.memory_max_turns, max_history_characters=config.memory_max_context_characters)
 
