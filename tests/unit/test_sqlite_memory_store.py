@@ -56,6 +56,18 @@ async def test_sqlite_store_persists_voice_settings(tmp_path: Path) -> None:
     )
 
 
+async def test_sqlite_store_derives_and_resets_communication_style_locally(tmp_path: Path) -> None:
+    store = SQLiteMemoryStore(tmp_path / "memory.db")
+
+    for message in ("hey", "sounds good", "can you help"):
+        profile = await store.observe_communication_style(message)
+
+    assert profile.response_style == "concise"
+    assert profile.tone == "casual"
+    await store.clear_communication_profile()
+    assert (await store.get_communication_profile()).response_style == "balanced"
+
+
 async def test_sqlite_store_migrates_voice_settings_from_v02(tmp_path: Path) -> None:
     db_path = tmp_path / "memory.db"
     with sqlite3.connect(db_path) as connection:

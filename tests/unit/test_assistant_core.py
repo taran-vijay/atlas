@@ -2,7 +2,14 @@ from typing import Any
 
 from atlas.core.assistant.core import _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE, AssistantCore
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory, VoiceSettings
+from atlas.core.memory.base import (
+    ActionRecord,
+    CommunicationProfile,
+    MemoryStore,
+    MemoryTurn,
+    SavedMemory,
+    VoiceSettings,
+)
 from atlas.core.tools.base import PermissionLevel, Tool, ToolResult
 from atlas.core.tools.registry import ToolRegistry
 from atlas.core.tools.system_tools import GetProcessesTool
@@ -27,6 +34,7 @@ class _InMemoryStore(MemoryStore):
         self._memories: list[SavedMemory] = []
         self._actions: list[ActionRecord] = []
         self._voice_settings = VoiceSettings()
+        self._profile = CommunicationProfile()
 
     async def add_turn(self, role: str, content: str) -> None:
         self._turns.append(MemoryTurn(role=role, content=content, timestamp=0.0))
@@ -76,6 +84,15 @@ class _InMemoryStore(MemoryStore):
 
     async def clear_actions(self) -> None:
         self._actions.clear()
+
+    async def observe_communication_style(self, user_input: str) -> CommunicationProfile:
+        return self._profile
+
+    async def get_communication_profile(self) -> CommunicationProfile:
+        return self._profile
+
+    async def clear_communication_profile(self) -> None:
+        self._profile = CommunicationProfile()
 
     async def get_voice_settings(self) -> VoiceSettings:
         return self._voice_settings
@@ -146,7 +163,7 @@ async def test_explicit_memory_is_saved_and_injected_into_future_context() -> No
 
     assert saved == "I’ll remember: my name is Taran"
     assert reply == "Nice to meet you, Taran."
-    assert "my name is Taran" in llm.messages[0][1].content
+    assert any("my name is Taran" in message.content for message in llm.messages[0])
 
 
 async def test_memory_can_be_listed_and_forgotten_without_model_calls() -> None:
@@ -191,6 +208,28 @@ async def test_casual_message_does_not_offer_system_tools() -> None:
 
     assert reply == "Hello!"
     assert llm.tool_sets == [None]
+
+
+async def test_local_communication_profile_guides_the_model_without_raw_style_data() -> None:
+    memory = _InMemoryStore()
+    memory._profile = CommunicationProfile(response_style="concise", tone="casual")
+    llm = _ScriptedLLM([LLMResponse(content="Sounds good.")])
+    core = AssistantCore(assistant_name="Atlas", llm=llm, memory=memory, tools=ToolRegistry())
+
+    await core.handle_message("hey")
+
+    prompts = [message.content for message in llm.messages[0] if message.role == "system"]
+    assert any("concise and casual" in prompt for prompt in prompts)
+
+
+async def test_suggestions_never_offer_an_unavailable_integration() -> None:
+    core = AssistantCore(assistant_name="Atlas", llm=_StubLLM(""), memory=_InMemoryStore(), tools=ToolRegistry())
+
+    suggestions = await core.suggestions_for(
+        "What's on my Calendar?", "I’m unable to access your Calendar because Atlas does not have an integration for it yet."
+    )
+
+    assert suggestions == ["What can Atlas do?", "Give me a computer status report"]
 
 
 async def test_casual_message_retries_as_plain_chat_after_spurious_tool_call() -> None:

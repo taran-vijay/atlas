@@ -1,4 +1,6 @@
-from atlas.cli import _build_tool_registry
+from unittest.mock import patch
+
+from atlas.cli import _build_tool_registry, main
 
 
 def test_cli_registers_read_and_confirmation_gated_tools() -> None:
@@ -24,3 +26,13 @@ def test_cli_registers_read_and_confirmation_gated_tools() -> None:
         "filesystem.rename_file",
         "filesystem.move_to_trash",
     ]
+
+
+def test_local_command_starts_the_desktop_app() -> None:
+    with (
+        patch("atlas.cli.sys.argv", ["atlas", "local"]),
+        patch("atlas.app.main") as desktop_main,
+    ):
+        main()
+
+    desktop_main.assert_called_once_with()

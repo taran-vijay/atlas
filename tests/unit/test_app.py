@@ -1,4 +1,15 @@
-from atlas.app import _DEVICE_ASSET, AtlasDesktopApp, ConnectionScreen, _create_assistant
+from unittest.mock import AsyncMock
+
+from atlas.app import (
+    _DEVICE_ASSET,
+    _INITIAL_GREETING,
+    _STARTUP_ANNOUNCEMENT,
+    AtlasDesktopApp,
+    ConnectionScreen,
+    _create_assistant,
+    _speak_startup_sequence,
+)
+from atlas.core.memory.base import VoiceSettings
 
 
 def test_desktop_module_exposes_assistant_factory() -> None:
@@ -13,7 +24,18 @@ def test_desktop_app_exposes_live_atlas_field_updates() -> None:
     assert hasattr(AtlasDesktopApp, "_refresh_field")
     assert hasattr(AtlasDesktopApp, "_set_field_state")
     assert hasattr(AtlasDesktopApp, "_animate_top_dot")
+    assert hasattr(AtlasDesktopApp, "_animate_core")
+    assert hasattr(AtlasDesktopApp, "_update_input_status")
 
 
 def test_desktop_app_includes_device_status_visual() -> None:
     assert _DEVICE_ASSET.is_file()
+
+
+async def test_startup_voice_announces_online_then_the_visible_greeting() -> None:
+    speaker = AsyncMock()
+
+    await _speak_startup_sequence(speaker, VoiceSettings())
+
+    assert speaker.speak.await_args_list[0].args == (_STARTUP_ANNOUNCEMENT, VoiceSettings())
+    assert speaker.speak.await_args_list[1].args == (_INITIAL_GREETING, VoiceSettings())

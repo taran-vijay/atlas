@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from atlas.core.memory.base import VoiceSettings
+from atlas.core.voice.macos_speaker import _emit_leading_progress
 from atlas.core.voice.piper_speaker import LocalVoiceSpeaker, PiperSpeaker, _emit_timed_progress
 
 
@@ -57,7 +58,7 @@ def test_neural_voice_profiles_resolve_to_distinct_male_and_female_models(tmp_pa
     assert speaker.model_path("male_ryan").name == "en_US-ryan-high.onnx"
     assert speaker.model_path("male_joe").name == "en_US-joe-medium.onnx"
     assert speaker.model_path("female_amy").name == "en_US-amy-medium.onnx"
-    assert speaker.model_path("female_lessac").name == "en_US-lessac-high.onnx"
+    assert speaker.model_path("female_hfc").name == "en_US-hfc_female-medium.onnx"
 
 
 async def test_neural_progress_uses_the_generated_audio_duration() -> None:
@@ -67,3 +68,12 @@ async def test_neural_progress_uses_the_generated_audio_duration() -> None:
 
     assert fragments == ["Atlas is ", "ready now."]
     assert sleep.await_args_list[0].args == (1.0,)
+
+
+def test_transcript_gets_a_small_lead_before_speech_begins() -> None:
+    fragments: list[str] = []
+
+    leading = _emit_leading_progress("Atlas is ready now.", fragments.append)
+
+    assert leading == 2
+    assert fragments == ["Atlas is "]

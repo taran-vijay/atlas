@@ -1,4 +1,4 @@
-"""Text-in / text-out entry point for Atlas (Milestone 1)."""
+"""Terminal entry point for Atlas's chat and local desktop modes."""
 from __future__ import annotations
 
 import asyncio
@@ -121,6 +121,18 @@ async def _run(config: AtlasConfig) -> None:
 
 
 def main() -> None:
+    if sys.argv[1:] == ["local"]:
+        # Import lazily: the desktop app imports registry helpers from here.
+        from atlas.app import main as desktop_main
+
+        desktop_main()
+        return
+    if sys.argv[1:] in (["help"], ["--help"], ["-h"]):
+        print("Usage: atlas [local]\n\n  atlas        Start terminal chat\n  atlas local  Start Atlas desktop")
+        return
+    if sys.argv[1:]:
+        print("Unknown Atlas command. Run 'atlas --help' for available commands.", file=sys.stderr)
+        raise SystemExit(2)
     config = AtlasConfig()
     _configure_logging(config)
     asyncio.run(_run(config))

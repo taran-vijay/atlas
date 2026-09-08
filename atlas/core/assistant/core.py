@@ -41,6 +41,12 @@ _PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE = (
     "say you are unable to access it instead."
 )
 
+_COMMUNICATION_PROFILE_PROMPT = (
+    "The user's locally inferred communication preference is {response_style} and {tone}. "
+    "Match it naturally: keep concise replies focused, and use an approachable tone when casual. "
+    "Do not mention this profile or claim to know the user beyond the conversation."
+)
+
 _NON_CONVERSATIONAL_REPLIES = {
     "no action taken.",
     "no action taken",
@@ -136,6 +142,7 @@ class AssistantCore:
 
     async def handle_message(self, user_input: str) -> str:
         await self._memory.add_turn("user", user_input)
+        communication_profile = await self._memory.observe_communication_style(user_input)
         memory_reply = await self._handle_memory_command(user_input)
         if memory_reply is not None:
             await self._memory.add_turn("assistant", memory_reply)
@@ -160,6 +167,15 @@ class AssistantCore:
         messages = [
             ChatMessage(role="system", content=system_prompt.format(name=self._name))
         ]
+        messages.append(
+            ChatMessage(
+                role="system",
+                content=_COMMUNICATION_PROFILE_PROMPT.format(
+                    response_style=communication_profile.response_style,
+                    tone=communication_profile.tone,
+                ),
+            )
+        )
         saved_memories = await self._memory.list_memories()
         if saved_memories:
             memory_lines = "\n".join(f"- {memory.content}" for memory in saved_memories)
@@ -252,6 +268,20 @@ class AssistantCore:
         """Clear action history without affecting saved memory or conversation."""
         await self._memory.clear_actions()
 
+    async def clear_communication_profile(self) -> None:
+        """Reset the locally inferred reply-style preference."""
+        await self._memory.clear_communication_profile()
+
+    async def suggestions_for(self, user_input: str, reply: str) -> list[str]:
+        """Offer safe, local follow-ups without pretending that missing tools exist."""
+        if "does not have an integration" in reply:
+            return ["What can Atlas do?", "Give me a computer status report"]
+        if self._user_requested_tool_data(user_input):
+            return ["Give me a quick status report", "What else can Atlas do?"]
+        if "?" in user_input:
+            return ["Explain that simply", "Give me a concise version"]
+        return ["Help me plan next steps", "What can Atlas help with?"]
+
     async def get_voice_settings(self) -> VoiceSettings:
         """Expose local voice preferences to the desktop interface."""
         return await self._memory.get_voice_settings()
@@ -272,6 +302,9 @@ class AssistantCore:
         if lowered in {"forget all memories", "forget everything", "clear memories"}:
             await self._memory.clear_memories()
             return "I’ve cleared your saved memories."
+        if lowered in {"reset communication preferences", "forget my communication style"}:
+            await self._memory.clear_communication_profile()
+            return "I’ve reset the local communication preferences I learned from your messages."
 
         remembered = re.match(r"^remember(?: that)?\s+(.+?)\s*$", normalized, re.IGNORECASE)
         if remembered is not None:

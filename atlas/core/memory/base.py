@@ -37,6 +37,14 @@ class ActionRecord:
 
 
 @dataclass(frozen=True)
+class CommunicationProfile:
+    """A small, local-only summary of how the user tends to communicate."""
+
+    response_style: str = "balanced"
+    tone: str = "neutral"
+
+
+@dataclass(frozen=True)
 class VoiceSettings:
     enabled: bool = True
     engine: str = "neural"
@@ -86,6 +94,18 @@ class MemoryStore(ABC):
     @abstractmethod
     async def clear_actions(self) -> None:
         """Delete action history without changing conversation or saved memories."""
+
+    @abstractmethod
+    async def observe_communication_style(self, user_input: str) -> CommunicationProfile:
+        """Update and return a derived local communication preference, never raw text."""
+
+    @abstractmethod
+    async def get_communication_profile(self) -> CommunicationProfile:
+        """Return the local, derived communication preference."""
+
+    @abstractmethod
+    async def clear_communication_profile(self) -> None:
+        """Reset all inferred communication preferences."""
 
     @abstractmethod
     async def get_voice_settings(self) -> VoiceSettings:

@@ -1,3 +1,3 @@
-Windows support is a post-Milestone-6 goal (see ../../../docs/roadmap.md).
-This package exists now only so `PlatformIntegration` implementations stay
-swappable by platform -- there is no implementation here yet.
+Windows support is planned after the macOS core is stable (see
+../../../docs/roadmap.md). This package exists so future platform adapters stay
+swappable; there is no Windows implementation yet.
