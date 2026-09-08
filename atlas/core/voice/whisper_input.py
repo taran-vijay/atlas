@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import tempfile
 import wave
@@ -16,7 +17,7 @@ class VoiceInputError(RuntimeError):
 class WhisperCppRecognizer:
     """Use a local whisper.cpp binary; audio is never sent to a service."""
 
-    def __init__(self, models_dir: Path, model_name: str = "ggml-base.en.bin") -> None:
+    def __init__(self, models_dir: Path, model_name: str = "ggml-tiny.en.bin") -> None:
         self._models_dir = models_dir.expanduser()
         self._model_name = model_name
 
@@ -26,6 +27,11 @@ class WhisperCppRecognizer:
 
     def is_ready(self) -> bool:
         return self._executable() is not None and self.model_path.is_file()
+
+    async def prewarm(self) -> None:
+        """Warm the local model's file cache without competing with the UI thread."""
+        if self.model_path.is_file():
+            await asyncio.to_thread(_touch_file, self.model_path)
 
     async def transcribe(self, wav_data: bytes) -> str:
         executable = self._executable()
@@ -44,6 +50,11 @@ class WhisperCppRecognizer:
                 "--file",
                 str(source_path),
                 "--no-timestamps",
+                "--language",
+                "en",
+                "--threads",
+                str(_transcription_threads()),
+                "--no-fallback",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -103,10 +114,13 @@ class PushToTalkRecorder:
             return ""
         return await self._recognizer.transcribe(_wav_bytes(bytes(self._frames), self._sample_rate))
 
+    async def prewarm(self) -> None:
+        await self._recognizer.prewarm()
+
 
 def _sounddevice() -> Any | None:
     try:
-        import sounddevice  # type: ignore[import-not-found]
+        import sounddevice  # type: ignore[import-untyped]
     except ImportError:
         return None
     return sounddevice
@@ -127,3 +141,15 @@ def _clean_transcript(output: str) -> str:
     """Keep user speech, excluding whisper.cpp's bracketed diagnostics."""
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     return " ".join(line for line in lines if not line.startswith(("whisper_", "system_info:")))
+
+
+def _transcription_threads() -> int:
+    """Use enough cores for a quick command without monopolizing the Mac."""
+    return max(2, min(6, (os.cpu_count() or 4) // 2))
+
+
+def _touch_file(path: Path) -> None:
+    """Read in chunks so macOS can cache the small command model before first use."""
+    with path.open("rb") as model:
+        while model.read(1_048_576):
+            pass
