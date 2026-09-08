@@ -30,12 +30,13 @@ from atlas.core.voice.whisper_input import (
     PushToTalkRecorder,
     VoiceInputError,
     WhisperCppRecognizer,
+    is_ambiguous_voice_transcript,
     normalize_voice_transcript,
+    split_wake_phrase,
 )
 
 _DEVICE_ASSET = Path(__file__).parent / "assets" / "atlas-device-core.png"
 _STARTUP_ANNOUNCEMENT = "ATLAS — Adaptive Tactical Learning & Assistance System is now online."
-_INITIAL_GREETING = "Hello — I’m Atlas. What would you like to work on?"
 
 _MIDNIGHT = "#030817"
 _DEEP_BLUE = "#071126"
@@ -81,9 +82,8 @@ class SpeaksResponses(Protocol):
 
 
 async def _speak_startup_sequence(speaker: SpeaksResponses, settings: VoiceSettings) -> None:
-    """Speak the online confirmation before Atlas's first visible reply."""
-    for line in (_STARTUP_ANNOUNCEMENT, _INITIAL_GREETING):
-        await speaker.speak(line, settings)
+    """Speak the online confirmation without adding a repetitive chat greeting."""
+    await speaker.speak(_STARTUP_ANNOUNCEMENT, settings)
 
 
 async def _play_system_sound(name: str) -> None:
@@ -95,17 +95,6 @@ async def _play_system_sound(name: str) -> None:
         return
     process = await asyncio.create_subprocess_exec(
         "afplay", str(sound), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-    )
-    await process.wait()
-
-
-async def _speak_fixed_acknowledgement() -> None:
-    """A deterministic acknowledgement that begins while Atlas works."""
-    if platform.system() != "Darwin":
-        return
-    process = await asyncio.create_subprocess_exec(
-        "say", "-r", "210", "One moment, sir.", stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
     )
     await process.wait()
 
@@ -183,6 +172,7 @@ class AtlasDesktopApp:
         self._speaker = LocalVoiceSpeaker(neural_voice_models_dir)
         self._voice_input = PushToTalkRecorder(WhisperCppRecognizer(voice_input_models_dir))
         self._recording = False
+        self._voice_ack_token = 0
         self._spoken_rendered = ""
         self._busy = False
         self._field_state = "READY"
@@ -266,7 +256,6 @@ class AtlasDesktopApp:
         self._transcript.pack(fill=tk.BOTH, expand=True)
         self._transcript.tag_configure("atlas", foreground=_CYAN, font=("Helvetica", 10, "bold"))
         self._transcript.tag_configure("user", foreground=_GOLD, font=("Helvetica", 10, "bold"))
-        self._append("Atlas", _INITIAL_GREETING)
 
         self._suggestion_bar = tk.Frame(content, bg=_MIDNIGHT)
         self._suggestion_bar.pack(fill=tk.X, pady=(8, 0))
@@ -302,7 +291,7 @@ class AtlasDesktopApp:
         self._send_button.pack(side=tk.RIGHT, padx=10, pady=10)
         self._mic_button = tk.Label(
             input_shell,
-            text="HOLD TO TALK",
+            text="START VOICE",
             bg="#0d2943",
             fg=_TEXT,
             font=("Helvetica", 9, "bold"),
@@ -313,8 +302,7 @@ class AtlasDesktopApp:
             highlightbackground="#214d6c",
         )
         self._mic_button.pack(side=tk.RIGHT, padx=(0, 2), pady=10)
-        self._mic_button.bind("<ButtonPress-1>", self._start_recording)
-        self._mic_button.bind("<ButtonRelease-1>", self._stop_recording)
+        self._mic_button.bind("<Button-1>", self._toggle_recording)
         self._input.focus_set()
         threading.Thread(target=self._prewarm_voice_input, daemon=True).start()
         self._refresh_field()
@@ -686,6 +674,12 @@ class AtlasDesktopApp:
         self._send()
         return "break"
 
+    def _toggle_recording(self, event: tk.Event[tk.Misc]) -> None:
+        if self._recording:
+            self._stop_recording(event)
+        else:
+            self._start_recording(event)
+
     def _start_recording(self, _: tk.Event[tk.Misc]) -> None:
         if self._busy or self._recording:
             return
@@ -696,9 +690,8 @@ class AtlasDesktopApp:
             messagebox.showinfo("Voice input", str(exc), parent=self._root)
             return
         self._recording = True
-        threading.Thread(target=self._play_listening_cue, daemon=True).start()
-        self._mic_button.configure(text="RECORDING… RELEASE", bg="#5a283b", fg="#ffffff")
-        self._input_status.configure(text="LISTENING LOCALLY… RELEASE TO TRANSCRIBE")
+        self._mic_button.configure(text="RECORDING… TAP TO FINISH", bg="#5a283b", fg="#ffffff")
+        self._input_status.configure(text="RECORDING LOCALLY… TAP AGAIN TO TRANSCRIBE")
 
     def _stop_recording(self, _: tk.Event[tk.Misc]) -> None:
         if not self._recording:
@@ -716,21 +709,50 @@ class AtlasDesktopApp:
         self._root.after(0, self._voice_input_ready, transcript)
 
     def _voice_input_ready(self, transcript: str) -> None:
-        self._mic_button.configure(text="HOLD TO TALK", bg="#0d2943", fg=_TEXT)
-        if transcript:
-            normalized = normalize_voice_transcript(transcript)
-            threading.Thread(target=self._speak_processing_acknowledgement, daemon=True).start()
-            self._send(normalized)
+        self._mic_button.configure(text="START VOICE", bg="#0d2943", fg=_TEXT)
+        if not transcript or is_ambiguous_voice_transcript(transcript):
+            self._voice_input_unintelligible()
+            return
+        woke_atlas, request = split_wake_phrase(transcript)
+        if woke_atlas:
+            threading.Thread(target=self._play_listening_cue, daemon=True).start()
+            if not request:
+                self._start_wake_listening()
+                return
+        normalized = normalize_voice_transcript(request if woke_atlas else transcript)
+        if is_ambiguous_voice_transcript(normalized):
+            self._voice_input_unintelligible()
         else:
-            self._input_status.configure(text="NO SPEECH DETECTED")
+            self._send(normalized, acknowledge_voice_wait=True)
         self._input.focus_set()
 
+    def _start_wake_listening(self) -> None:
+        """Continue recording after a standalone local wake phrase."""
+        try:
+            self._voice_input.start()
+        except VoiceInputError as exc:
+            self._voice_input_failed(str(exc))
+            return
+        self._recording = True
+        self._mic_button.configure(text="ATLAS IS LISTENING… TAP TO FINISH", bg="#124764", fg="#ffffff")
+        self._input_status.configure(text="ATLAS IS LISTENING…")
+
+    def _voice_input_unintelligible(self) -> None:
+        reply = "I’m sorry, I was unable to transcribe your voice message. Please try again!"
+        self._input_status.configure(text="VOICE MESSAGE UNCLEAR")
+        self._append(self._name, reply)
+        if self._voice_settings.enabled:
+            threading.Thread(target=self._speak_fixed_reply, args=(reply,), daemon=True).start()
+
+    def _speak_fixed_reply(self, reply: str) -> None:
+        asyncio.run(self._speaker.speak(reply, self._voice_settings))
+
     def _voice_input_failed(self, error: str) -> None:
-        self._mic_button.configure(text="HOLD TO TALK", bg="#0d2943", fg=_TEXT)
+        self._mic_button.configure(text="START VOICE", bg="#0d2943", fg=_TEXT)
         self._input_status.configure(text="VOICE INPUT UNAVAILABLE")
         messagebox.showerror("Voice input", error, parent=self._root)
 
-    def _send(self, voice_message: str | None = None) -> None:
+    def _send(self, voice_message: str | None = None, *, acknowledge_voice_wait: bool = False) -> None:
         if self._busy:
             return
         message = voice_message or self._input.get("1.0", tk.END).strip()
@@ -742,7 +764,18 @@ class AtlasDesktopApp:
         self._busy = True
         self._set_field_state("PROCESSING")
         self._send_button.configure(state=tk.DISABLED, text="ANALYZING…")
+        if acknowledge_voice_wait:
+            self._voice_ack_token += 1
+            token = self._voice_ack_token
+            self._root.after(1_300, self._acknowledge_long_voice_request, token)
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
+
+    def _acknowledge_long_voice_request(self, token: int) -> None:
+        if self._busy and token == self._voice_ack_token and self._voice_settings.enabled:
+            threading.Thread(target=self._speak_processing_acknowledgement, daemon=True).start()
+
+    def _speak_processing_acknowledgement(self) -> None:
+        asyncio.run(self._speaker.speak("One moment, sir.", self._voice_settings))
 
     def _prewarm_voice_input(self) -> None:
         """Keep first push-to-talk use responsive without blocking the command deck."""
@@ -753,10 +786,6 @@ class AtlasDesktopApp:
 
     def _play_listening_cue(self) -> None:
         asyncio.run(_play_system_sound("Glass"))
-
-    def _speak_processing_acknowledgement(self) -> None:
-        if self._voice_settings.enabled:
-            asyncio.run(_speak_fixed_acknowledgement())
 
     def _reply(self, message: str) -> None:
         try:
@@ -776,6 +805,7 @@ class AtlasDesktopApp:
         else:
             self._append(self._name, reply)
         self._busy = False
+        self._voice_ack_token += 1
         self._set_field_state("READY")
         self._send_button.configure(state=tk.NORMAL, text="EXECUTE  ›")
         self._render_suggestions(suggestions)

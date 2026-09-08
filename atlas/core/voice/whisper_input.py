@@ -154,6 +154,26 @@ def normalize_voice_transcript(transcript: str) -> str:
     return cleaned
 
 
+def split_wake_phrase(transcript: str) -> tuple[bool, str]:
+    """Recognize a local 'Hey Atlas' wake phrase and return any following request."""
+    cleaned = " ".join(transcript.split())
+    match = re.match(r"^(?:hey|hi|hello)\s+atlas(?:[,.! ]+|$)(.*)$", cleaned, re.IGNORECASE)
+    if match is None:
+        return False, cleaned
+    return True, match.group(1).strip(" ,.!?")
+
+
+def is_ambiguous_voice_transcript(transcript: str) -> bool:
+    """Reject only clear non-speech artifacts; legitimate short commands remain valid."""
+    words = re.findall(r"[A-Za-z]+", transcript)
+    if not words:
+        return True
+    if any(len(word) > 32 for word in words):
+        return True
+    normalized = [word.casefold() for word in words]
+    return len(normalized) >= 3 and len(set(normalized)) == 1
+
+
 def _transcription_threads() -> int:
     """Use enough cores for a quick command without monopolizing the Mac."""
     return max(2, min(6, (os.cpu_count() or 4) // 2))
