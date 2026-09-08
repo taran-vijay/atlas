@@ -302,7 +302,6 @@ class AtlasDesktopApp:
             state=tk.DISABLED,
             bg=_NIGHT_CHART,
             fg=_STAR_PAPER,
-            disabledforeground=_STAR_PAPER,
             insertbackground=_SIGNAL_TEAL,
             relief=tk.FLAT,
             padx=0,
@@ -572,7 +571,7 @@ class AtlasDesktopApp:
         window.configure(bg=_NIGHT_CHART)
         tk.Label(window, text="Memory", fg=_STAR_PAPER, bg=_NIGHT_CHART, font=(_TYPEFACE, 22, "bold")).pack(anchor=tk.W, padx=26, pady=(26, 2))
         tk.Label(window, text="Only facts you explicitly asked Atlas to remember are listed here.", fg=_SKY_MIST, bg=_NIGHT_CHART, font=(_TYPEFACE, 11)).pack(anchor=tk.W, padx=26, pady=(0, 15))
-        contents = scrolledtext.ScrolledText(window, wrap=tk.WORD, state=tk.DISABLED, bg=_OBSERVATORY, fg=_STAR_PAPER, disabledforeground=_STAR_PAPER, relief=tk.FLAT, padx=14, pady=12, font=(_TYPEFACE, 12))
+        contents = scrolledtext.ScrolledText(window, wrap=tk.WORD, state=tk.DISABLED, bg=_OBSERVATORY, fg=_STAR_PAPER, relief=tk.FLAT, padx=14, pady=12, font=(_TYPEFACE, 12))
         contents.pack(fill=tk.BOTH, expand=True, padx=22)
 
         def refresh() -> None:
@@ -621,7 +620,7 @@ class AtlasDesktopApp:
         window.configure(bg=_NIGHT_CHART)
         tk.Label(window, text="Action history", fg=_STAR_PAPER, bg=_NIGHT_CHART, font=(_TYPEFACE, 22, "bold")).pack(anchor=tk.W, padx=26, pady=(26, 2))
         tk.Label(window, text="Local record of confirmation-gated actions. Clipboard contents are never recorded.", fg=_SKY_MIST, bg=_NIGHT_CHART, font=(_TYPEFACE, 11)).pack(anchor=tk.W, padx=26, pady=(0, 15))
-        contents = scrolledtext.ScrolledText(window, wrap=tk.WORD, state=tk.DISABLED, bg=_OBSERVATORY, fg=_STAR_PAPER, disabledforeground=_STAR_PAPER, relief=tk.FLAT, padx=14, pady=12, font=(_TYPEFACE, 12))
+        contents = scrolledtext.ScrolledText(window, wrap=tk.WORD, state=tk.DISABLED, bg=_OBSERVATORY, fg=_STAR_PAPER, relief=tk.FLAT, padx=14, pady=12, font=(_TYPEFACE, 12))
         contents.pack(fill=tk.BOTH, expand=True, padx=22)
 
         def refresh() -> None:
