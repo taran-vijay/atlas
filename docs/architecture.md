@@ -28,7 +28,9 @@ Desktop app or terminal chat
 
 The desktop app checks the local Ollama connection before it opens. Voice
 output is optional and uses a macOS system voice or a local Piper neural
-model. No reply text is sent to an external speech service.
+model. Optional voice input records only while the user holds the desktop
+control, then passes a local WAV file to whisper.cpp. No reply text or audio
+is sent to an external speech service.
 
 ## Repository layout
 
@@ -70,6 +72,6 @@ local. Neural voice models live under `~/.atlas/voices` by default.
 
 ## Next boundary
 
-Wake-word detection and speech-to-text are intentionally separate from speech
-output. When voice input arrives, it will feed text into the same
-`AssistantCore` rather than bypassing the safety, memory, or tool layers.
+Wake-word detection remains intentionally separate from push-to-talk speech
+input. Transcribed text feeds into the same `AssistantCore` rather than
+bypassing the safety, memory, or tool layers.

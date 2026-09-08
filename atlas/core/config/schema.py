@@ -51,6 +51,7 @@ class AtlasConfig(BaseSettings):
 
     # Voice
     neural_voice_models_dir: Path = Path.home() / ".atlas" / "voices"
+    voice_input_models_dir: Path = Path.home() / ".atlas" / "speech-models"
 
     # Logging / audit
     log_level: LogLevel = LogLevel.INFO
@@ -61,4 +62,5 @@ class AtlasConfig(BaseSettings):
         """Create local data directories if they don't already exist."""
         self.memory_db_path.parent.mkdir(parents=True, exist_ok=True)
         self.neural_voice_models_dir.mkdir(parents=True, exist_ok=True)
+        self.voice_input_models_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)

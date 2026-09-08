@@ -13,6 +13,7 @@ protected services.
 | Local file inspection | Normal file access | Atlas can only inspect paths the current user can read. |
 | Open apps/files, clipboard write, file/folder actions | Atlas confirmation | The desktop app shows the exact requested action and target before execution. |
 | Voice output | None | Speech is generated or played locally; no microphone access is needed. |
+| Voice input | Microphone | Recording happens only while **HOLD TO TALK** is held; local Whisper transcription follows release. |
 
 File actions are scoped tools, not arbitrary shell access. Atlas verifies
 results where the operating system makes verification possible and records a
@@ -22,7 +23,7 @@ local action-history entry for confirmation-gated actions.
 
 | Capability | Expected macOS permission | Status |
 |---|---|---|
-| Voice input, wake word, speech-to-text | Microphone | Not implemented |
+| Wake word / background listening | Microphone | Not implemented |
 | Calendar and Reminders | Calendars / Reminders | Not implemented |
 | Mail and Messages | Automation / app-specific access | Not implemented |
 | Notifications | Notifications | Not implemented |
