@@ -29,6 +29,7 @@ from atlas.core.voice.piper_speaker import NEURAL_VOICE_OPTIONS, LocalVoiceSpeak
 from atlas.core.voice.whisper_input import (
     PushToTalkRecorder,
     VoiceInputError,
+    WakePhraseListener,
     WhisperCppRecognizer,
     is_ambiguous_voice_transcript,
     normalize_voice_transcript,
@@ -170,7 +171,9 @@ class AtlasDesktopApp:
         self._name = name
         self._voice_settings = voice_settings
         self._speaker = LocalVoiceSpeaker(neural_voice_models_dir)
-        self._voice_input = PushToTalkRecorder(WhisperCppRecognizer(voice_input_models_dir))
+        recognizer = WhisperCppRecognizer(voice_input_models_dir)
+        self._voice_input = PushToTalkRecorder(recognizer)
+        self._wake_listener = WakePhraseListener(recognizer)
         self._recording = False
         self._voice_ack_token = 0
         self._spoken_rendered = ""
@@ -181,6 +184,7 @@ class AtlasDesktopApp:
         self._core_phase = 0
         self._configure_window()
         self._build_interface()
+        self._root.protocol("WM_DELETE_WINDOW", self._close)
 
     def _configure_window(self) -> None:
         self._root.title(f"{self._name} // Adaptive Command Deck")
@@ -291,7 +295,7 @@ class AtlasDesktopApp:
         self._send_button.pack(side=tk.RIGHT, padx=10, pady=10)
         self._mic_button = tk.Label(
             input_shell,
-            text="START VOICE",
+            text="RECORD VOICE",
             bg="#0d2943",
             fg=_TEXT,
             font=("Helvetica", 9, "bold"),
@@ -680,9 +684,10 @@ class AtlasDesktopApp:
         else:
             self._start_recording(event)
 
-    def _start_recording(self, _: tk.Event[tk.Misc]) -> None:
+    def _start_recording(self, _: tk.Event[tk.Misc] | None) -> None:
         if self._busy or self._recording:
             return
+        self._wake_listener.stop()
         try:
             self._voice_input.start()
         except VoiceInputError as exc:
@@ -709,9 +714,10 @@ class AtlasDesktopApp:
         self._root.after(0, self._voice_input_ready, transcript)
 
     def _voice_input_ready(self, transcript: str) -> None:
-        self._mic_button.configure(text="START VOICE", bg="#0d2943", fg=_TEXT)
+        self._mic_button.configure(text="RECORD VOICE", bg="#0d2943", fg=_TEXT)
         if not transcript or is_ambiguous_voice_transcript(transcript):
             self._voice_input_unintelligible()
+            self._activate_wake_listener()
             return
         woke_atlas, request = split_wake_phrase(transcript)
         if woke_atlas:
@@ -724,6 +730,7 @@ class AtlasDesktopApp:
             self._voice_input_unintelligible()
         else:
             self._send(normalized, acknowledge_voice_wait=True)
+        self._activate_wake_listener()
         self._input.focus_set()
 
     def _start_wake_listening(self) -> None:
@@ -748,9 +755,10 @@ class AtlasDesktopApp:
         asyncio.run(self._speaker.speak(reply, self._voice_settings))
 
     def _voice_input_failed(self, error: str) -> None:
-        self._mic_button.configure(text="START VOICE", bg="#0d2943", fg=_TEXT)
+        self._mic_button.configure(text="RECORD VOICE", bg="#0d2943", fg=_TEXT)
         self._input_status.configure(text="VOICE INPUT UNAVAILABLE")
         messagebox.showerror("Voice input", error, parent=self._root)
+        self._activate_wake_listener()
 
     def _send(self, voice_message: str | None = None, *, acknowledge_voice_wait: bool = False) -> None:
         if self._busy:
@@ -783,6 +791,28 @@ class AtlasDesktopApp:
             asyncio.run(self._voice_input.prewarm())
         except OSError:
             logging.getLogger("atlas.app").info("voice_input_prewarm_unavailable")
+        self._root.after(0, self._activate_wake_listener)
+
+    def _activate_wake_listener(self) -> None:
+        if self._busy or self._recording or not self._wake_listener.start(self._on_wake_phrase):
+            return
+        self._input_status.configure(text="WAKE LISTENER ACTIVE  ·  SAY ‘HEY ATLAS’")
+
+    def _on_wake_phrase(self) -> None:
+        self._root.after(0, self._begin_wake_command)
+
+    def _begin_wake_command(self) -> None:
+        if self._busy or self._recording:
+            return
+        threading.Thread(target=self._play_listening_cue, daemon=True).start()
+        self._start_recording(None)
+        if self._recording:
+            self._mic_button.configure(text="ATLAS IS LISTENING… TAP TO FINISH", bg="#124764")
+            self._input_status.configure(text="ATLAS IS LISTENING…")
+
+    def _close(self) -> None:
+        self._wake_listener.stop()
+        self._root.destroy()
 
     def _play_listening_cue(self) -> None:
         asyncio.run(_play_system_sound("Glass"))

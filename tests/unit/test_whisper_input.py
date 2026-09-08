@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from atlas.core.voice.whisper_input import (
+    WakePhraseListener,
     WhisperCppRecognizer,
     _clean_transcript,
     _wav_bytes,
@@ -51,3 +52,10 @@ def test_clear_non_speech_artifacts_are_rejected_without_rejecting_short_command
     assert is_ambiguous_voice_transcript("") is True
     assert is_ambiguous_voice_transcript("blah blah blah") is True
     assert is_ambiguous_voice_transcript("Hi") is False
+
+
+def test_wake_listener_requires_local_engine_and_model(tmp_path: Path) -> None:
+    recognizer = WhisperCppRecognizer(tmp_path)
+    listener = WakePhraseListener(recognizer)
+
+    assert listener.is_ready() is False
