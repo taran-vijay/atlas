@@ -13,7 +13,7 @@ protected services.
 | Local file inspection | Normal file access | Atlas can only inspect paths the current user can read. |
 | Open apps/files, clipboard write, file/folder actions | Atlas confirmation | The desktop app shows the exact requested action and target before execution. |
 | Voice output | None | Speech is generated or played locally; no microphone access is needed. |
-| Voice input and wake phrase | Microphone | A compact local recognizer listens for “Hey Atlas” while Atlas is open. **RECORD VOICE** remains a manual shortcut; all captured audio stays on the Mac. |
+| Voice input | Microphone | Atlas records only while **Hold to talk** is physically pressed. Release transcribes the captured audio locally; no background listener runs. |
 
 File actions are scoped tools, not arbitrary shell access. Atlas verifies
 results where the operating system makes verification possible and records a
