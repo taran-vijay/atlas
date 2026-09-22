@@ -25,6 +25,9 @@
   explicit hold-to-talk recording and rebuilt the desktop interface around a
   responsive celestial-navigation visual system with keyboard focus and
   reduced-motion support.
+- [x] **Outcomes v0.1.** Local, content-free measurements for response speed,
+  tool and voice reliability, and confirmed-action outcomes, with a clearable
+  desktop scorecard.
 
 ## Next
 

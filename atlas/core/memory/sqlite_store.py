@@ -18,6 +18,7 @@ from atlas.core.memory.base import (
     CommunicationProfile,
     MemoryStore,
     MemoryTurn,
+    OutcomeSummary,
     SavedMemory,
     VoiceSettings,
 )
@@ -59,6 +60,29 @@ CREATE TABLE IF NOT EXISTS communication_profile (
     total_words INTEGER NOT NULL DEFAULT 0,
     short_message_count INTEGER NOT NULL DEFAULT 0,
     casual_message_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS response_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    route TEXT NOT NULL,
+    success INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    timestamp REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tool_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_name TEXT NOT NULL,
+    success INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    timestamp REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS voice_transcription_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    success INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    timestamp REAL NOT NULL
 );
 """
 
@@ -144,6 +168,74 @@ class SQLiteMemoryStore(MemoryStore):
     async def clear_actions(self) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM actions")
+
+    async def record_response_outcome(
+        self, *, route: str, success: bool, duration_ms: int
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO response_outcomes (route, success, duration_ms, timestamp) "
+                "VALUES (?, ?, ?, ?)",
+                (route, int(success), _duration_ms(duration_ms), time.time()),
+            )
+
+    async def record_tool_outcome(
+        self, *, tool_name: str, success: bool, duration_ms: int
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO tool_outcomes (tool_name, success, duration_ms, timestamp) "
+                "VALUES (?, ?, ?, ?)",
+                (tool_name, int(success), _duration_ms(duration_ms), time.time()),
+            )
+
+    async def record_voice_transcription_outcome(self, *, success: bool, duration_ms: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO voice_transcription_outcomes (success, duration_ms, timestamp) "
+                "VALUES (?, ?, ?)",
+                (int(success), _duration_ms(duration_ms), time.time()),
+            )
+
+    async def get_outcome_summary(self) -> OutcomeSummary:
+        with self._connect() as conn:
+            response_rows = conn.execute(
+                "SELECT success, duration_ms FROM response_outcomes"
+            ).fetchall()
+            tool_rows = conn.execute("SELECT success, duration_ms FROM tool_outcomes").fetchall()
+            voice_rows = conn.execute(
+                "SELECT success, duration_ms FROM voice_transcription_outcomes"
+            ).fetchall()
+            action_rows = conn.execute("SELECT outcome FROM actions").fetchall()
+
+        response_count, response_successes, response_average, response_p95 = _outcome_timing(
+            response_rows, include_p95=True
+        )
+        tool_count, tool_successes, tool_average, _ = _outcome_timing(tool_rows)
+        voice_count, voice_successes, voice_average, _ = _outcome_timing(voice_rows)
+        actions = [str(row[0]) for row in action_rows]
+        return OutcomeSummary(
+            response_count=response_count,
+            successful_response_count=response_successes,
+            average_response_ms=response_average,
+            p95_response_ms=response_p95,
+            tool_call_count=tool_count,
+            successful_tool_call_count=tool_successes,
+            average_tool_ms=tool_average,
+            voice_transcription_count=voice_count,
+            successful_voice_transcription_count=voice_successes,
+            average_voice_transcription_ms=voice_average,
+            confirmed_action_count=len(actions),
+            completed_action_count=actions.count("COMPLETED"),
+            declined_action_count=actions.count("DECLINED"),
+            failed_action_count=actions.count("FAILED"),
+        )
+
+    async def clear_outcome_metrics(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM response_outcomes")
+            conn.execute("DELETE FROM tool_outcomes")
+            conn.execute("DELETE FROM voice_transcription_outcomes")
 
     async def observe_communication_style(self, user_input: str) -> CommunicationProfile:
         """Store aggregate style signals only; the original message stays in the transcript."""
@@ -268,6 +360,24 @@ def _action_outcome(result: ToolResult) -> str:
     if result.error == "User declined confirmation":
         return "DECLINED"
     return "FAILED"
+
+
+def _duration_ms(value: int) -> int:
+    """Prevent invalid caller data from polluting a local measurement."""
+    return max(0, value)
+
+
+def _outcome_timing(
+    rows: list[tuple[int, int]], *, include_p95: bool = False
+) -> tuple[int, int, int | None, int | None]:
+    if not rows:
+        return 0, 0, None, None
+    durations = sorted(int(row[1]) for row in rows)
+    count = len(durations)
+    successes = sum(bool(row[0]) for row in rows)
+    average = round(sum(durations) / count)
+    p95_index = min(count - 1, max(0, (count * 95 + 99) // 100 - 1))
+    return count, successes, average, durations[p95_index] if include_p95 else None
 
 
 def _action_summary(tool_name: str, arguments: dict[str, Any]) -> str:

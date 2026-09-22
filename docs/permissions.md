@@ -14,6 +14,7 @@ protected services.
 | Open apps/files, clipboard write, file/folder actions | Atlas confirmation | The desktop app shows the exact requested action and target before execution. |
 | Voice output | None | Speech is generated or played locally; no microphone access is needed. |
 | Voice input | Microphone | Atlas records only while **Hold to talk** is physically pressed. Release transcribes the captured audio locally; no background listener runs. |
+| Outcomes scorecard | None | Stores local aggregate durations and success/failure labels for responses, tools, and voice transcription. It does not store message, audio, or reply contents as measurement data. |
 
 File actions are scoped tools, not arbitrary shell access. Atlas verifies
 results where the operating system makes verification possible and records a

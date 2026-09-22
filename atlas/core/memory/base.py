@@ -37,6 +37,30 @@ class ActionRecord:
 
 
 @dataclass(frozen=True)
+class OutcomeSummary:
+    """Aggregate local performance and reliability measurements.
+
+    This deliberately contains no user messages, audio, tool arguments, or
+    model output—only counts, timing, and outcome categories.
+    """
+
+    response_count: int = 0
+    successful_response_count: int = 0
+    average_response_ms: int | None = None
+    p95_response_ms: int | None = None
+    tool_call_count: int = 0
+    successful_tool_call_count: int = 0
+    average_tool_ms: int | None = None
+    voice_transcription_count: int = 0
+    successful_voice_transcription_count: int = 0
+    average_voice_transcription_ms: int | None = None
+    confirmed_action_count: int = 0
+    completed_action_count: int = 0
+    declined_action_count: int = 0
+    failed_action_count: int = 0
+
+
+@dataclass(frozen=True)
 class CommunicationProfile:
     """A small, local-only summary of how the user tends to communicate."""
 
@@ -94,6 +118,30 @@ class MemoryStore(ABC):
     @abstractmethod
     async def clear_actions(self) -> None:
         """Delete action history without changing conversation or saved memories."""
+
+    @abstractmethod
+    async def record_response_outcome(
+        self, *, route: str, success: bool, duration_ms: int
+    ) -> None:
+        """Store a content-free measurement for one assistant response."""
+
+    @abstractmethod
+    async def record_tool_outcome(
+        self, *, tool_name: str, success: bool, duration_ms: int
+    ) -> None:
+        """Store a content-free measurement for one dispatched tool call."""
+
+    @abstractmethod
+    async def record_voice_transcription_outcome(self, *, success: bool, duration_ms: int) -> None:
+        """Store a content-free measurement for one voice transcription attempt."""
+
+    @abstractmethod
+    async def get_outcome_summary(self) -> OutcomeSummary:
+        """Return local aggregate measurements without exposing private content."""
+
+    @abstractmethod
+    async def clear_outcome_metrics(self) -> None:
+        """Delete all local performance and reliability measurements."""
 
     @abstractmethod
     async def observe_communication_style(self, user_input: str) -> CommunicationProfile:

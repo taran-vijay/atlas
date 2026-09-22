@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import threading
+import time
 import tkinter as tk
 from collections.abc import Callable
 from datetime import datetime
@@ -21,7 +22,7 @@ from atlas.cli import _build_tool_registry, _configure_logging
 from atlas.core.assistant.core import AssistantCore
 from atlas.core.config.schema import AtlasConfig
 from atlas.core.llm.ollama_provider import OllamaProvider
-from atlas.core.memory.base import ActionRecord, SavedMemory, VoiceSettings
+from atlas.core.memory.base import ActionRecord, OutcomeSummary, SavedMemory, VoiceSettings
 from atlas.core.memory.sqlite_store import SQLiteMemoryStore
 from atlas.core.tools.registry import ConfirmationCallback
 from atlas.core.voice.macos_speaker import VOICE_OPTIONS, _speech_text
@@ -66,6 +67,14 @@ class HandlesMemory(HandlesMessage, Protocol):
 
     async def clear_action_history(self) -> None: ...
 
+    async def get_outcome_summary(self) -> OutcomeSummary: ...
+
+    async def clear_outcome_metrics(self) -> None: ...
+
+    async def record_voice_transcription_outcome(
+        self, *, success: bool, duration_ms: int
+    ) -> None: ...
+
     async def clear_communication_profile(self) -> None: ...
 
     async def suggestions_for(self, user_input: str, reply: str) -> list[str]: ...
@@ -100,6 +109,50 @@ async def _play_system_sound(name: str) -> None:
         "afplay", str(sound), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
     )
     await process.wait()
+
+
+def _format_duration(duration_ms: int | None) -> str:
+    if duration_ms is None:
+        return "No data yet"
+    if duration_ms < 1_000:
+        return f"{duration_ms} ms"
+    return f"{duration_ms / 1_000:.1f} s"
+
+
+def _success_rate(successes: int, total: int) -> str:
+    if total == 0:
+        return "No data yet"
+    return f"{round(successes / total * 100)}%"
+
+
+def _outcome_report(summary: OutcomeSummary) -> str:
+    """Render an honest, content-free local scorecard for the Outcomes panel."""
+    responses = (
+        "Responses\n"
+        f"{summary.successful_response_count} of {summary.response_count} completed\n"
+        f"Average: {_format_duration(summary.average_response_ms)}\n"
+        f"95th percentile: {_format_duration(summary.p95_response_ms)}"
+    )
+    tools = (
+        "Tools\n"
+        f"{summary.successful_tool_call_count} of {summary.tool_call_count} completed "
+        f"({_success_rate(summary.successful_tool_call_count, summary.tool_call_count)})\n"
+        f"Average: {_format_duration(summary.average_tool_ms)}"
+    )
+    voice = (
+        "Voice transcription\n"
+        f"{summary.successful_voice_transcription_count} of "
+        f"{summary.voice_transcription_count} accepted "
+        f"({_success_rate(summary.successful_voice_transcription_count, summary.voice_transcription_count)})\n"
+        f"Average: {_format_duration(summary.average_voice_transcription_ms)}"
+    )
+    actions = (
+        "Confirmed actions\n"
+        f"{summary.completed_action_count} completed, {summary.declined_action_count} declined, "
+        f"{summary.failed_action_count} failed\n"
+        f"{summary.confirmed_action_count} total approvals requested"
+    )
+    return f"{responses}\n\n{tools}\n\n{voice}\n\n{actions}"
 
 
 class DesktopConfirmationBridge:
@@ -227,6 +280,7 @@ class AtlasDesktopApp:
         )
         nav = tk.Frame(self._sidebar, bg=_QUIET_BLUE)
         nav.pack(fill=tk.X, padx=18)
+        self._navigation_button(nav, "Outcomes", self._open_outcomes_window).pack(fill=tk.X, pady=(0, 5))
         self._navigation_button(nav, "Memory", self._open_memory_window).pack(fill=tk.X, pady=(0, 5))
         self._navigation_button(nav, "Action history", self._open_action_history).pack(fill=tk.X, pady=5)
         self._navigation_button(nav, "Settings", self._open_settings_window).pack(fill=tk.X, pady=5)
@@ -564,6 +618,90 @@ class AtlasDesktopApp:
         """Compatibility hook for the original thinking indicator test."""
         self._animate_core()
 
+    def _open_outcomes_window(self) -> None:
+        window = tk.Toplevel(self._root)
+        window.title("Atlas Outcomes")
+        window.geometry("560x560")
+        window.minsize(460, 460)
+        window.configure(bg=_NIGHT_CHART)
+        tk.Label(window, text="Outcomes", fg=_STAR_PAPER, bg=_NIGHT_CHART, font=(_TYPEFACE, 22, "bold")).pack(
+            anchor=tk.W, padx=26, pady=(26, 2)
+        )
+        tk.Label(
+            window,
+            text="Local measurements since reporting began. No messages, audio, or response text are collected.",
+            fg=_SKY_MIST,
+            bg=_NIGHT_CHART,
+            font=(_TYPEFACE, 11),
+            wraplength=500,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, padx=26, pady=(0, 16))
+        contents = scrolledtext.ScrolledText(
+            window,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            bg=_OBSERVATORY,
+            fg=_STAR_PAPER,
+            relief=tk.FLAT,
+            padx=18,
+            pady=16,
+            font=(_TYPEFACE, 12),
+        )
+        contents.pack(fill=tk.BOTH, expand=True, padx=26)
+
+        def refresh() -> None:
+            threading.Thread(target=load, daemon=True).start()
+
+        def load() -> None:
+            summary = asyncio.run(self._assistant.get_outcome_summary())
+            self._root.after(0, render, summary)
+
+        def render(summary: OutcomeSummary) -> None:
+            contents.configure(state=tk.NORMAL)
+            contents.delete("1.0", tk.END)
+            contents.insert(tk.END, _outcome_report(summary))
+            contents.configure(state=tk.DISABLED)
+
+        def clear_all() -> None:
+            if messagebox.askyesno(
+                "Clear outcomes",
+                "Remove response, tool, and voice measurements? Confirmed action history stays separate. This cannot be undone.",
+                parent=window,
+            ):
+                threading.Thread(target=clear, daemon=True).start()
+
+        def clear() -> None:
+            asyncio.run(self._assistant.clear_outcome_metrics())
+            self._root.after(0, refresh)
+
+        controls = tk.Frame(window, bg=_NIGHT_CHART)
+        controls.pack(fill=tk.X, padx=26, pady=20)
+        self._command_label(
+            controls,
+            "Refresh",
+            refresh,
+            background=_MERIDIAN,
+            foreground=_STAR_PAPER,
+            hover_background=_OBSERVATORY,
+            hover_foreground=_STAR_PAPER,
+            padding_x=14,
+            padding_y=9,
+            font=(_TYPEFACE, 10, "bold"),
+        ).pack(side=tk.LEFT)
+        self._command_label(
+            controls,
+            "Clear measurements",
+            clear_all,
+            background="#633849",
+            foreground=_STAR_PAPER,
+            hover_background="#835066",
+            hover_foreground=_STAR_PAPER,
+            padding_x=14,
+            padding_y=9,
+            font=(_TYPEFACE, 10, "bold"),
+        ).pack(side=tk.RIGHT)
+        refresh()
+
     def _open_memory_window(self) -> None:
         window = tk.Toplevel(self._root)
         window.title("Atlas Memory")
@@ -820,12 +958,31 @@ class AtlasDesktopApp:
         threading.Thread(target=self._transcribe_recording, daemon=True).start()
 
     def _transcribe_recording(self) -> None:
+        started = time.perf_counter()
         try:
             transcript = asyncio.run(self._voice_input.stop_and_transcribe())
         except VoiceInputError as exc:
+            self._record_voice_transcription_outcome(
+                success=False, duration_ms=round((time.perf_counter() - started) * 1_000)
+            )
             self._root.after(0, self._voice_input_failed, str(exc))
             return
+        normalized = normalize_voice_transcript(transcript)
+        self._record_voice_transcription_outcome(
+            success=bool(transcript) and not is_ambiguous_voice_transcript(normalized),
+            duration_ms=round((time.perf_counter() - started) * 1_000),
+        )
         self._root.after(0, self._voice_input_ready, transcript)
+
+    def _record_voice_transcription_outcome(self, *, success: bool, duration_ms: int) -> None:
+        try:
+            asyncio.run(
+                self._assistant.record_voice_transcription_outcome(
+                    success=success, duration_ms=duration_ms
+                )
+            )
+        except Exception:
+            logging.getLogger("atlas.app").exception("voice_outcome_record_failed")
 
     def _voice_input_ready(self, transcript: str) -> None:
         self._mic_button.configure(text="Hold to talk", bg=_COPPER_BEARING, fg=_NIGHT_CHART)

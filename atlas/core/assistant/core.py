@@ -7,11 +7,20 @@ to the LLM -> persist the turn -> return the final natural-language reply.
 """
 from __future__ import annotations
 
+import logging
 import re
+import time
 from dataclasses import dataclass
 
 from atlas.core.llm.base import ChatMessage, LLMProvider, LLMResponse
-from atlas.core.memory.base import ActionRecord, MemoryStore, MemoryTurn, SavedMemory, VoiceSettings
+from atlas.core.memory.base import (
+    ActionRecord,
+    MemoryStore,
+    MemoryTurn,
+    OutcomeSummary,
+    SavedMemory,
+    VoiceSettings,
+)
 from atlas.core.tools.base import ToolResult
 from atlas.core.tools.registry import ToolRegistry
 
@@ -115,6 +124,8 @@ _MEMORY_SENSITIVE_TERMS = (
     "social security",
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 @dataclass
 class _ExecutedToolCall:
@@ -143,6 +154,24 @@ class AssistantCore:
         self._max_tool_hops = max_tool_hops
 
     async def handle_message(self, user_input: str) -> str:
+        """Handle a request and persist a content-free outcome measurement."""
+        started = time.perf_counter()
+        route = self._outcome_route(user_input)
+        success = False
+        try:
+            reply = await self._handle_message(user_input)
+            success = True
+            return reply
+        finally:
+            duration_ms = round((time.perf_counter() - started) * 1_000)
+            try:
+                await self._memory.record_response_outcome(
+                    route=route, success=success, duration_ms=duration_ms
+                )
+            except Exception:  # Measurement must never make a request fail.
+                _LOGGER.exception("response_outcome_record_failed")
+
+    async def _handle_message(self, user_input: str) -> str:
         await self._memory.add_turn("user", user_input)
         communication_profile = await self._memory.observe_communication_style(user_input)
         memory_reply = await self._handle_memory_command(user_input)
@@ -229,8 +258,12 @@ class AssistantCore:
                     name = ""
                 if not isinstance(arguments, dict):
                     arguments = {}
-                result = await self._tools.dispatch(
-                    name, arguments
+                tool_started = time.perf_counter()
+                result = await self._tools.dispatch(name, arguments)
+                await self._record_tool_outcome(
+                    tool_name=name,
+                    success=result.success,
+                    duration_ms=round((time.perf_counter() - tool_started) * 1_000),
                 )
                 executed_calls.append(_ExecutedToolCall(name=name, result=result))
                 messages.append(
@@ -270,6 +303,25 @@ class AssistantCore:
         """Clear action history without affecting saved memory or conversation."""
         await self._memory.clear_actions()
 
+    async def get_outcome_summary(self) -> OutcomeSummary:
+        """Return local performance and reliability measurements."""
+        return await self._memory.get_outcome_summary()
+
+    async def clear_outcome_metrics(self) -> None:
+        """Clear performance measurements without altering conversation or memories."""
+        await self._memory.clear_outcome_metrics()
+
+    async def record_voice_transcription_outcome(
+        self, *, success: bool, duration_ms: int
+    ) -> None:
+        """Record a local voice-input result without retaining audio or transcript content."""
+        try:
+            await self._memory.record_voice_transcription_outcome(
+                success=success, duration_ms=duration_ms
+            )
+        except Exception:  # Voice input must remain available if measurement storage fails.
+            _LOGGER.exception("voice_transcription_outcome_record_failed")
+
     async def clear_communication_profile(self) -> None:
         """Reset the locally inferred reply-style preference."""
         await self._memory.clear_communication_profile()
@@ -291,6 +343,16 @@ class AssistantCore:
     async def save_voice_settings(self, settings: VoiceSettings) -> None:
         """Persist desktop voice preferences locally."""
         await self._memory.save_voice_settings(settings)
+
+    async def _record_tool_outcome(
+        self, *, tool_name: str, success: bool, duration_ms: int
+    ) -> None:
+        try:
+            await self._memory.record_tool_outcome(
+                tool_name=tool_name or "unknown", success=success, duration_ms=duration_ms
+            )
+        except Exception:  # Tool execution must not depend on measurements.
+            _LOGGER.exception("tool_outcome_record_failed tool=%s", tool_name)
 
     async def _handle_memory_command(self, user_input: str) -> str | None:
         normalized = user_input.strip()
@@ -337,6 +399,27 @@ class AssistantCore:
             if any(term in normalized for term in terms):
                 return integration
         return None
+
+    def _outcome_route(self, user_input: str) -> str:
+        """Classify a response without persisting any of the user's request text."""
+        lowered = user_input.strip().casefold()
+        if self._unavailable_integration(user_input) is not None:
+            return "unavailable_integration"
+        if (
+            lowered in {
+                "what do you remember?",
+                "what do you remember about me?",
+                "list memories",
+                "forget all memories",
+                "forget everything",
+                "clear memories",
+                "reset communication preferences",
+                "forget my communication style",
+            }
+            or lowered.startswith(("remember", "forget"))
+        ):
+            return "memory_command"
+        return "tool_request" if self._user_requested_tool_data(user_input) else "conversation"
 
     def _bounded_history(self, history: list[MemoryTurn]) -> list[MemoryTurn]:
         """Keep the newest context within a predictable local-model workload."""
