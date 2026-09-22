@@ -8,9 +8,10 @@ from atlas.app import (
     AtlasDesktopApp,
     ConnectionScreen,
     _create_assistant,
+    _outcome_report,
     _speak_startup_sequence,
 )
-from atlas.core.memory.base import VoiceSettings
+from atlas.core.memory.base import OutcomeSummary, VoiceSettings
 
 
 def test_desktop_module_exposes_assistant_factory() -> None:
@@ -42,6 +43,28 @@ def test_desktop_app_includes_device_status_visual() -> None:
 
 def test_desktop_app_uses_only_supported_tk_text_options() -> None:
     assert "disabledforeground" not in inspect.getsource(desktop_app)
+
+
+def test_outcome_report_uses_real_measurements_without_private_content() -> None:
+    report = _outcome_report(
+        OutcomeSummary(
+            response_count=4,
+            successful_response_count=3,
+            average_response_ms=750,
+            p95_response_ms=1_800,
+            tool_call_count=2,
+            successful_tool_call_count=1,
+            average_tool_ms=120,
+            voice_transcription_count=1,
+            successful_voice_transcription_count=1,
+            average_voice_transcription_ms=860,
+        )
+    )
+
+    assert "3 of 4 completed" in report
+    assert "750 ms" in report
+    assert "1.8 s" in report
+    assert "1 of 2 completed (50%)" in report
 
 
 async def test_startup_voice_announces_online_without_a_repeated_greeting() -> None:

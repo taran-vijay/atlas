@@ -7,6 +7,7 @@ from atlas.core.memory.base import (
     CommunicationProfile,
     MemoryStore,
     MemoryTurn,
+    OutcomeSummary,
     SavedMemory,
     VoiceSettings,
 )
@@ -33,6 +34,9 @@ class _InMemoryStore(MemoryStore):
         self._turns: list[MemoryTurn] = []
         self._memories: list[SavedMemory] = []
         self._actions: list[ActionRecord] = []
+        self.response_outcomes: list[tuple[str, bool, int]] = []
+        self.tool_outcomes: list[tuple[str, bool, int]] = []
+        self.voice_outcomes: list[tuple[bool, int]] = []
         self._voice_settings = VoiceSettings()
         self._profile = CommunicationProfile()
 
@@ -84,6 +88,34 @@ class _InMemoryStore(MemoryStore):
 
     async def clear_actions(self) -> None:
         self._actions.clear()
+
+    async def record_response_outcome(
+        self, *, route: str, success: bool, duration_ms: int
+    ) -> None:
+        self.response_outcomes.append((route, success, duration_ms))
+
+    async def record_tool_outcome(
+        self, *, tool_name: str, success: bool, duration_ms: int
+    ) -> None:
+        self.tool_outcomes.append((tool_name, success, duration_ms))
+
+    async def record_voice_transcription_outcome(self, *, success: bool, duration_ms: int) -> None:
+        self.voice_outcomes.append((success, duration_ms))
+
+    async def get_outcome_summary(self) -> OutcomeSummary:
+        return OutcomeSummary(
+            response_count=len(self.response_outcomes),
+            successful_response_count=sum(success for _, success, _ in self.response_outcomes),
+            tool_call_count=len(self.tool_outcomes),
+            successful_tool_call_count=sum(success for _, success, _ in self.tool_outcomes),
+            voice_transcription_count=len(self.voice_outcomes),
+            successful_voice_transcription_count=sum(success for success, _ in self.voice_outcomes),
+        )
+
+    async def clear_outcome_metrics(self) -> None:
+        self.response_outcomes.clear()
+        self.tool_outcomes.clear()
+        self.voice_outcomes.clear()
 
     async def observe_communication_style(self, user_input: str) -> CommunicationProfile:
         return self._profile
@@ -151,6 +183,21 @@ async def test_handle_message_returns_llm_reply_and_persists_turns() -> None:
 
     history = await memory.recent_turns(10)
     assert [t.role for t in history] == ["user", "assistant"]
+
+
+async def test_handle_message_records_a_content_free_response_outcome() -> None:
+    memory = _InMemoryStore()
+    core = AssistantCore(
+        assistant_name="Atlas", llm=_StubLLM("Hello"), memory=memory, tools=ToolRegistry()
+    )
+
+    assert await core.handle_message("hi") == "Hello"
+
+    assert len(memory.response_outcomes) == 1
+    route, success, duration_ms = memory.response_outcomes[0]
+    assert route == "conversation"
+    assert success is True
+    assert duration_ms >= 0
 
 
 async def test_explicit_memory_is_saved_and_injected_into_future_context() -> None:
@@ -367,6 +414,11 @@ async def test_status_report_preserves_all_structured_tool_results() -> None:
     ]
     assert '"percentage": 92' in follow_up_messages[-2].content
     assert '"time": "10:00"' in follow_up_messages[-1].content
+    assert [name for name, _, _ in memory.tool_outcomes] == [
+        "system.get_battery",
+        "system.get_time",
+    ]
+    assert all(success for _, success, _ in memory.tool_outcomes)
 
 
 async def test_failed_status_tool_cannot_be_filled_in_by_the_llm() -> None:

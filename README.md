@@ -22,6 +22,8 @@ through explicitly scoped, permission-gated tools.
 - Open apps/files, write to the clipboard, and perform scoped file actions
   only after your in-app confirmation
 - Keep an action history and distinguish verified results from unavailable data
+- Show an **Outcomes** scorecard for local response speed, tool reliability,
+  voice-transcription speed, and confirmed-action outcomes
 - Read replies aloud with a built-in macOS voice or optional local Piper
   neural voices, while keeping the visible transcript paced with speech
 - Turn speech into text locally with an optional hold-to-talk control
@@ -35,6 +37,12 @@ Atlas has no mandatory account, cloud API, or server. The local model does not
 execute shell commands directly: every capability is an individual tool with a
 permission tier. Read-only tools run only for explicit computer/file requests;
 actions always ask for approval first. See [the security model](docs/security-model.md).
+
+The **Outcomes** scorecard stores only timestamps, durations, success/failure
+labels, and tool names in the local SQLite database. It never stores message
+content, transcribed audio, model replies, or tool-result data as measurement
+data. You can clear response, tool, and voice measurements from the Outcomes
+panel; confirmed actions remain managed by **Action history**.
 
 ## Requirements
 
